@@ -1,0 +1,13 @@
+[all]
+language = Python
+max_line_length = 120
+use_spaces = True
+
+# Many possible bears exist for Python2, reporting many issues, often ignored by our current pylint/flake setup.
+# Uncommented ones are proven and work without reporting issues against the current code base.
+# bears = PEP8Bear,CPDBear,PinRequirementsBear,PyCommentedCodeBear,PyDocStyleBear,PyImportSortBear,PyLintBear,BaditBear
+
+bears = PyUnusedCodeBear,PEP8Bear
+
+[all.gluetool]
+files = gluetool/**/*.py

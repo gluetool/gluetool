@@ -1,0 +1,4 @@
+---
+
+name: yaml-pipeline
+description: Run a pipeline described by a YAML file.

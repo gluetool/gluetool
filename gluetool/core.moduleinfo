@@ -1,0 +1,33 @@
+---
+- name: citool-core
+  description: Continuous Integration Swiss Army Knife
+  dependencies:
+    yum:
+      - krb5-devel
+    pip:
+      - alabaster==0.7.10
+      - Babel==2.5.1
+      - beautifulsoup4==4.5.3
+      - certifi==2017.7.27.1
+      - chardet==3.0.4
+      - colorama==0.3.7
+      - contextlib2==0.5.5
+      - docutils==0.13.1
+      - enum34==1.1.6
+      - idna==2.6
+      - imagesize==0.7.1
+      - Jinja2==2.9.6
+      - Mako==1.0.6
+      - MarkupSafe==1.0
+      - Pygments==2.2.0
+      - pytz==2017.2
+      - raven==6.0.0
+      - requests==2.18.4
+      - ruamel.ordereddict==0.4.13
+      - ruamel.yaml==0.15.34
+      - six==1.11.0
+      - snowballstemmer==1.2.1
+      - Sphinx==1.5.2
+      - tabulate==0.7.7
+      - urllib3==1.22
+      - urlnorm==1.1.4
