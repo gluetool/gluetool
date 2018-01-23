@@ -12,9 +12,9 @@ if __name__ == '__main__':
               'gluetool.tests'
           ],
           entry_points={
-              'console_scripts': {
+              'console_scripts': [
                   'gluetool = gluetool.tool:main'
-              }
+              ]
           },
           data_files=[
               ('gluetool_modules', [
