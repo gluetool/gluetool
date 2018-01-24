@@ -1,6 +1,8 @@
 gluetool - A tool for gluing together one-file python modules in a sequential command-line pipeline
 ---------------------------------------------------------------------------------------------------
 
+.. image:: gluetool-log.png
+
 ``gluetool`` is a command line centric generic framework useable for glueing modules into pipeline
 
 Documentation
