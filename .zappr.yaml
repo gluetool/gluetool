@@ -1,0 +1,21 @@
+---
+
+approvals:
+  # require at least 2 reviews
+  minimum: 2
+
+  # ignore review by PR opener
+  ignore: pr_opener  
+
+  # only collaborators can approve
+  from:
+    collaborators: true
+
+  # require at least 1 review from administrators
+  groups:
+    admins:
+      minimum: 1
+      from:
+        users:
+          - happz
+          - thrix

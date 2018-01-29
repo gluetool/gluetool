@@ -1,0 +1,42 @@
+---
+
+version: 2
+
+requirements:
+  signed_off_by:
+    required: false
+
+group_defaults:
+  approve_by_comment:
+    enabled: true
+    approve_regex: '^:\+1:'
+
+  reset_on_push:
+    enabled: true
+
+  reset_on_reopened:
+    enabled: true
+
+  author_approval:
+    ignored: true
+
+  always_pending:
+    title_regex: '(WIP|wip)'
+    explanation: 'This PR is a work in progress...'
+
+  reject_value: -99
+
+  conditions:
+    branches:
+      - master
+
+groups:
+  developers:
+    users: all
+    required: 2
+
+  admins:
+    users:
+      - happz
+      - thrix
+    required: 1
