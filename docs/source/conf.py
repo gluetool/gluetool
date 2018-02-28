@@ -21,6 +21,9 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import os
+import sys
+
 import sphinx.ext.autodoc
 import sphinx.environment
 import sphinx_rtd_theme
@@ -192,5 +195,15 @@ class ModuleDescriptionDocumenter(sphinx.ext.autodoc.DataDocumenter):
         pass
 
 
+def run_apidoc(_):
+    from sphinx.apidoc import main
+
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    cur_dir = os.path.abspath(os.path.dirname(__file__))
+    module = os.path.join(cur_dir, '..', '..', 'gluetool')
+    main([None, '-e', '-o', cur_dir, module, '--force'])
+
+
 def setup(app):
     app.add_autodocumenter(ModuleDescriptionDocumenter)
+    app.connect('builder-inited', run_apidoc)
