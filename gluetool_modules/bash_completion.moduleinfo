@@ -1,0 +1,4 @@
+---
+
+name: bash-completion
+description: Generate Bash completion configuration.

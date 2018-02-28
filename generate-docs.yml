@@ -1,0 +1,65 @@
+---
+- hosts: localhost
+  vars:
+    sphinx_builder: html
+    generate_dir: ./docs
+    log_path: "{{ generate_dir }}/build/sphinx_build_stderr.log"
+    clean: false
+    static_rst:
+      - source/framework.rst
+      - source/modules.rst
+      - source/howto-tests.rst
+      - source/howto-docs.rst
+      - source/index.rst
+      - source/DEVELOPMENT.rst
+    base_files:
+      - source/conf.py
+    clean_files:
+      - build
+      - source/gluetool.*
+  tasks:
+    - name: Ensure directory hierarchy exists
+      file:
+        path: "{{ item }}"
+        state: directory
+      with_items:
+        - "{{ generate_dir }}/"
+        - "{{ generate_dir }}/source/"
+
+    - name: "Clean doc in '{{ generate_dir }}'"
+      shell: rm -rf {{ generate_dir }}/{{ item }}
+      args:
+        removes: "{{ generate_dir }}/{{ item }}"
+      when: clean
+      with_items: "{{ clean_files }}"
+      tags:
+        - clean
+
+    - name: Copy static_rst files
+      copy:
+        src: "docs/{{ item }}"
+        dest: "{{ generate_dir }}/{{ item }}"
+      with_items: "{{ static_rst }}"
+
+    - name: Copy base files
+      copy:
+        src: "docs/{{ item }}"
+        dest: "{{ generate_dir }}/{{ item }}"
+      with_items: "{{ base_files }}"
+
+    - name: Generate apidoc
+      command: sphinx-apidoc -T -e -o "{{ generate_dir }}/source/" gluetool/
+
+    - name: Generate documentation
+      command: sphinx-build -M "{{ sphinx_builder }}" source build
+      register: sphinx_build
+      args:
+        chdir: "{{ generate_dir }}"
+
+    - name: "Create error log file {{log_path}}"
+      copy:
+        content: "{{ sphinx_build.stderr }}"
+        dest: "{{ log_path }}"
+
+    - name: "Check log file for errors"
+      command: awk '/ERROR:/ { print "Errors were detected, check log file and your docs"; exit 1; }' "{{ log_path }}"

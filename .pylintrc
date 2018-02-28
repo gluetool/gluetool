@@ -1,0 +1,19 @@
+[BASIC]
+max-branches=20
+max-attributes=15
+good-names=_,c,e,f,g,i,p,s,ci
+defining-attr-methods=__init__,sanity
+generated-members=debug,verbose,info,warn,error,exception
+max-line-length=120
+module-rgx = (([a-z_][a-z0-9_-]*)|([A-Z][a-zA-Z0-9-]+))$
+function-rgx = [a-z_][a-z0-9_]{2,40}$
+
+[MESSAGES CONTROL]
+# Re-enable these ASAP
+disable=missing-docstring,logging-format-interpolation,too-many-locals,duplicate-code,inconsistent-return-statements
+
+[TYPECHECK]
+# ignore kerberos module
+# it shows issues like
+# Module 'kerberos' has no 'authGSSClientInit' member (no-member)
+ignored-modules = kerberos
