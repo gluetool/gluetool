@@ -47,7 +47,7 @@ if __name__ == '__main__':
           author_email='mvadkert@redhat.com, mprchlik@redhat.com',
           license='BSD',
           platforms='UNIX',
-          url='TODO',
+          url='https://gluetool.readthedocs.org/',
           classifiers=[
               'Development Status :: 5 - Production/Stable',
               'Environment :: Console',
