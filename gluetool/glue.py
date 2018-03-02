@@ -2,7 +2,6 @@
 
 import argparse
 import collections
-import ConfigParser
 import imp
 import inspect
 import logging
@@ -12,6 +11,7 @@ import warnings
 import ast
 
 from functools import partial
+from six.moves import configparser
 
 import enum
 import jinja2
@@ -1027,7 +1027,7 @@ class Configurable(LoggerMixin, object):
 
         log_dict(self.debug, 'Loading configuration from following paths', paths)
 
-        parser = ConfigParser.ConfigParser()
+        parser = configparser.ConfigParser()
         parsed_paths = parser.read(paths)
 
         log_dict(self.debug, 'Read configuration files', parsed_paths)
@@ -1040,7 +1040,7 @@ class Configurable(LoggerMixin, object):
             try:
                 value = parser.get('default', name)
 
-            except (ConfigParser.NoOptionError, ConfigParser.NoSectionError):
+            except (configparser.NoOptionError, configparser.NoSectionError):
                 return
 
             if 'type' in params:
