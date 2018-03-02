@@ -63,10 +63,15 @@ class GlueError(Exception):
     def __init__(self, message, caused_by=None, **kwargs):
         super(GlueError, self).__init__(message, **kwargs)
 
+        # if not told explicitly, try to detect the cause
         if caused_by is None:
             caused_by = sys.exc_info()
-            if caused_by != (None, None, None):
-                self.caused_by = caused_by
+
+        # if there's no cause, use None to signal that fact to the rest of the world
+        if caused_by == (None, None, None):
+            caused_by = None
+
+        self.caused_by = caused_by
 
     def sentry_fingerprint(self, current):
         # pylint: disable=no-self-use
