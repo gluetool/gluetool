@@ -40,6 +40,7 @@ Example usage:
 import atexit
 import json
 import logging
+import os
 import traceback
 
 import jinja2
@@ -50,6 +51,8 @@ from .color import Colors
 BLOB_HEADER = '---v---v---v---v---v---'
 BLOB_FOOTER = '---^---^---^---^---^---'
 
+# Default log level is logging.INFO or logging.DEBUG if GLUETOOL_DEBUG environment variable is set
+DEFAULT_LOG_LEVEL = logging.DEBUG if os.getenv('GLUETOOL_DEBUG') else logging.INFO
 
 # Add our custom "verbose" loglevel - it's even bellow DEBUG
 logging.VERBOSE = 5
@@ -473,7 +476,7 @@ class Logging(object):
         return Logging.logger
 
     @staticmethod
-    def create_logger(output_file=None, level=logging.INFO, sentry=None, sentry_submit_warning=None):
+    def create_logger(output_file=None, level=DEFAULT_LOG_LEVEL, sentry=None, sentry_submit_warning=None):
         """
         Create and setup logger.
 
