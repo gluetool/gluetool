@@ -320,7 +320,10 @@ class Gluetool(object):
                 # pylint: disable=line-too-long
                 functions += [[func_name, mod_name] for func_name in Glue.modules[mod_name]['class'].shared_functions]  # Ignore PEP8Bear
 
-            functions = sorted(functions, key=lambda row: row[0])
+            if functions:
+                functions = sorted(functions, key=lambda row: row[0])
+            else:
+                functions = [['-- no shared functions available --', '']]
 
             sys.stdout.write("""Available shared functions
 
