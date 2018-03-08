@@ -108,3 +108,7 @@ Uniform Logging
 ^^^^^^^^^^^^^^^
 
 The ``gluetool`` framework provides uniform logging. Modules can use their own ``info``, ``warn``, ``debug`` and ``verbose`` methods to log messages on different log levels. The log level can be changed using the ``-d/--debug`` and ``-v/--verbose`` options of the ``gluetool`` command.
+
+  .. note::
+
+    Note that the ``-d/--debug`` and ``-v/--verbose`` options will enable the logging after parsing the command line and configuration. To enable the debug mode as early as possible, i.e. during the initialization of the logging system, export the variable ``GLUETOOL_DEBUG`` to any value.
