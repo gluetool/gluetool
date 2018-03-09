@@ -15,7 +15,7 @@ gluetool - A tool for gluing together one-file python modules in a sequential co
      :target: https://requires.io/github/gluetool/gluetool/requirements/?branch=master
      :alt: Requirements Status
 
-.. image:: https://readthedocs.org/projects/gluetool-test/badge/?version=latest
+.. image:: https://readthedocs.org/projects/gluetool/badge/?version=latest
      :target: http://gluetool.readthedocs.io/en/latest/?badge=latest
      :alt: Documentation Status
 
