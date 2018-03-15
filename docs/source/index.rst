@@ -31,7 +31,7 @@ Table of contents
    :maxdepth: 1
 
    framework 
-   modules
+   howto-modules
    howto-tests
    howto-docs
    DEVELOPMENT
