@@ -40,6 +40,17 @@ if __name__ == '__main__':
               'tabulate==0.7.7',
               'urlnorm==1.1.4'
           ],
+          tests_require=[
+               'codecov==2.0.15'
+               'flake8==3.4.1'
+               'hypothesis==3.45.4'
+               'pytest-pylint==0.7.1'
+               'pytest-flake8==0.8.1'
+               'pytest-cov==2.5.1'
+               'pytest-catchlog==1.2.2'
+               'pytest-mock==1.6.3'
+               'pytest==3.2.3'
+          ],
           description='Python framework for constructing command-line pipelines',
           # pylint: disable=line-too-long
           long_description='Gluetool is a command line centric generic framework useable for glueing modules into pipeline',
