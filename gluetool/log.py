@@ -109,7 +109,14 @@ _TRACEBACK_TEMPLATE = """
 
 {{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception.message }}
 
-{{ traceback }}
+{% for filepath, lineno, fn, text, frame in stack %}
+  File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
+    {{ text | default('') }}
+
+    Local variables:{% for name in frame.f_locals.iterkeys() | sort %}
+        {{ name }} = {{ frame.f_locals[name] }}
+    {%- endfor %}
+{% endfor %}
 ---^---^---^---^---^---^----------^---^---^---^---^---^---
 """
 
@@ -367,7 +374,19 @@ class LoggingFormatter(logging.Formatter):
         output = ['']
 
         def _add_block(label, exc, trace):
-            output.append(tmpl.render(label=label, exception=exc, traceback=''.join(traceback.format_tb(trace))))
+            # construct a "stack" by merging two sources of data
+            # 1) what's provided by traceback.extract_tb(), i.e. (filename, lineno, fnname, text),
+            # 2) stack frame objects, hidden inside traceback object and available via iteration
+            stack = []
+
+            extracted_tb = traceback.extract_tb(trace)
+
+            trace_iter = trace
+            while trace_iter:
+                stack.append(list(extracted_tb.pop(0)) + [trace_iter.tb_frame])
+                trace_iter = trace_iter.tb_next
+
+            output.append(tmpl.render(label=label, exception=exc, stack=stack))
 
         # don't unpack traceback - it might lead to a circular reference, leaving this frame
         # uncollectable
@@ -378,7 +397,7 @@ class LoggingFormatter(logging.Formatter):
 
             _add_block('Caused by', exc_info[1], exc_info[2])
 
-        return '\n'.join(output)
+        return '\n'.join(output).strip()
 
     def format(self, record):
         """
