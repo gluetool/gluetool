@@ -173,6 +173,14 @@ class BlobLogger(object):
             return self.on_finally(*args, **kwargs)
 
 
+def format_blob(blob):
+    """
+    Format a blob of text for printing. Wraps the text with boundaries to mark its borders.
+    """
+
+    return '{}\n{}\n{}'.format(BLOB_HEADER, blob, BLOB_FOOTER)
+
+
 def format_dict(dictionary):
     """
     Format a Python data structure for printing. Uses :py:func:`json.dumps` formatting
@@ -185,6 +193,16 @@ def format_dict(dictionary):
         return repr(obj)
 
     return json.dumps(dictionary, sort_keys=True, indent=4, separators=(',', ': '), default=default)
+
+
+def format_xml(element):
+    """
+    Format an XML element, e.g. Beaker job description, for printing.
+
+    :param element: XML element to format.
+    """
+
+    return element.prettify(encoding='utf-8')
 
 
 def log_dict(writer, intro, data):
@@ -239,7 +257,7 @@ def log_blob(writer, intro, blob):
     :param str blob: The actual blob of text.
     """
 
-    writer("{}:\n{}\n{}\n{}".format(intro, BLOB_HEADER, blob, BLOB_FOOTER))
+    writer("{}:\n{}".format(intro, format_blob(blob)))
 
 
 def log_xml(writer, intro, element):
@@ -251,7 +269,7 @@ def log_xml(writer, intro, element):
     :param element: XML element to log.
     """
 
-    writer("{}:\n{}".format(intro, element.prettify(encoding='utf-8')))
+    writer("{}:\n{}".format(intro, format_xml(element)))
 
 
 class ContextAdapter(logging.LoggerAdapter):
