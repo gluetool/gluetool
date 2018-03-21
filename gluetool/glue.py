@@ -14,7 +14,7 @@ import enum
 import jinja2
 
 from .color import Colors
-from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring
+from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
 from .log import Logging, ContextAdapter, ModuleAdapter, log_dict
 
 
@@ -650,6 +650,27 @@ class Configurable(object):
         and their values, which is supposed to be used in various "evaluate *this*" operations
         like rendering of templates.
 
+        To provide nice and readable documentation of variables, returned by a module's ``eval_context``
+        property, assign a dictionary, describing these variables, to a local variable named
+        ``__content__``:
+
+        .. code-block:: python
+
+           ...
+
+           @property
+           def eval_context(self):
+               __content__ = {
+                   'FOO': 'This is an important variable, extracted from clouds.'
+                }
+
+                return {
+                    'FOO': 42
+                }
+
+        ``gluetool`` core will extract this information and will use it to generate different help
+        texts like your module's help or a list of all known context variables.
+
         :rtype: dict
         """
 
@@ -753,13 +774,16 @@ class Module(Configurable):
         """)).render(FUNCTIONS=functions_help(functions))
 
     def parse_args(self, args):
-        epilog = '{}\n{}'.format('' if self.options_note is None else docstring_to_help(self.options_note),
-                                 self._generate_shared_functions_help())
+        epilog = [
+            '' if self.options_note is None else docstring_to_help(self.options_note),
+            self._generate_shared_functions_help(),
+            eval_context_help(self)
+        ]
 
         self._parse_args(args,
                          usage='{} [options]'.format(Colors.style(self.unique_name, fg='cyan')),
                          description=docstring_to_help(self.__doc__),
-                         epilog=epilog,
+                         epilog='\n'.join(epilog).strip(),
                          formatter_class=LineWrapRawTextHelpFormatter)
 
     def destroy(self, failure=None):
@@ -853,6 +877,8 @@ class Glue(Configurable):
     :param gluetool.sentry.Sentry sentry: If set, it provides interface to Sentry.
     """
 
+    name = 'gluetool core'
+
     options = [
         ('Global options', {
             ('l', 'list-modules'): {
@@ -866,6 +892,11 @@ class Glue(Configurable):
                 'help': 'List all available shared functions.',
                 'action': 'store_true',
                 'default': False
+            },
+            ('E', 'list-eval-context'): {
+                'help': 'List all available variables provided by modules in their evaluation contexts.',
+                'action': 'store_true',
+                'default': False,
             },
             ('r', 'retries'): {
                 'help': 'Number of retries',
@@ -1068,9 +1099,12 @@ class Glue(Configurable):
     def eval_context(self):
         """
         Returns "global" evaluation context - some variables that are nice to have in all contexts.
-
-        :var dict ENV: :py:data:`os.environ`.
         """
+
+        # pylint: disable=unused-variable
+        __content__ = {  # noqa
+            'ENV': 'Dictionary representing environment variables.'
+        }
 
         return {
             'ENV': dict(os.environ)

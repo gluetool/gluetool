@@ -9,6 +9,7 @@ separated in their own file to keep things clean.
 """
 
 import argparse
+import ast
 import inspect
 import os
 import sys
@@ -25,6 +26,7 @@ import sphinx.writers.text
 import sphinx.locale
 
 from .color import Colors
+from .log import Logging
 
 
 # Initialize Sphinx locale settings
@@ -324,3 +326,129 @@ def functions_help(functions):
     {{ body }}
     {% endfor %}
     """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions])
+
+
+def extract_eval_context_info(source, logger=None):
+    """
+    Extract information of evaluation context content from the ``source`` - a module
+    or any other object with ``eval_context`` property. The information we're looking
+    for is represented by an assignment to special variable, ``__content__``, in the
+    body of ``eval_context`` getter. ``__content__`` is expected to be assigned
+    a dictionary, listing context variables (keys) and their descriptions (values).
+
+    If it's not possible to find such information, or an exception is raised, the function
+    returns an empty dictionary.
+
+    :param gluetool.glue.Configurable source: object to extract information from.
+    :rtype: dict(str, str)
+    """
+
+    logger = logger or Logging.get_logger()
+
+    logger.debug("extract eval cotext info from '{}'".format(source.name))
+
+    # Cannot do "source.eval_context" because we'd get the value of property, which
+    # is usualy a dict. We cannot let it evaluate and return the value, therefore
+    # we must get it via its parent class.
+    eval_context = source.__class__.eval_context
+
+    # this is not a cyclic import, yet pylint thinks so :/
+    # pylint: disable=cyclic-import
+    from .glue import Configurable
+
+    # If eval context is the same as Configurable's - which is the original class for all modules
+    # and even gluetool.glue.Glue - it means its inherited from Configurable, therefore
+    # ``source`` does not have its own, and in that case we should return an empty dictionary,
+    # saying "module does not provide any eval context, just the one inherited from the base class",
+    # and that's empty anyway.
+    if eval_context == Configurable.eval_context:
+        logger.debug('eval context matches the original one, ignoring')
+        return {}
+
+    try:
+        # get source code of the actual getter of the ``eval_context`` property
+        getter_source = inspect.getsource(eval_context.fget)
+
+        # it's indented - trim it like a docstring
+        getter_source = trim_docstring(getter_source)
+
+        # now, parse getter source, and create its AST
+        tree = ast.parse(getter_source)
+
+        # find ``__content__ = { ...`` assignment inside the function
+        # ``tree`` is the whole module, ``tree.body[0]`` is the function definition
+        for node in tree.body[0].body:
+            if not isinstance(node, ast.Assign):
+                continue
+
+            target = node.targets[0]
+
+            if not isinstance(target, ast.Name) or target.id != '__content__':
+                continue
+
+            if not isinstance(node.value, ast.Dict):
+                continue
+
+            assign = node
+            break
+
+        else:
+            # No "__content__ = {..." found? So be it, return empty info.
+            logger.debug('eval context exists but does not describe its content')
+            return {}
+
+        # wrap this assignment into a dummy Module node, to create an execution unit with just a single
+        # statement (__content__ assignment), so we could slip it to compile/eval.
+        dummy_module = ast.Module([assign])
+
+        # compile the module to an executable code
+        code = compile(dummy_module, '', 'exec')
+
+        # We prepare our "locals" mapping - when we eval our dummy module, its "__content__ = ..." will be executed
+        # within a context of some globals/locals mappings. We give eval our custom locals mapping, which will
+        # result in __content__ being created in it - and we can just pick it up from this mapping when eval
+        # is done.
+        module_locals = {}
+
+        # this should be reasonably safe, don't raise a warning then...
+        # pylint: disable=eval-used
+        eval(code, {}, module_locals)
+
+        return {
+            name: trim_docstring(description) for name, description in module_locals['__content__'].iteritems()
+        }
+
+    # pylint: disable=broad-except
+    except Exception as exc:
+        logger.warn("Cannot read eval context info from '{}': {}".format(source.name, exc))
+
+        return {}
+
+
+def eval_context_help(source):
+    """
+    Generate and format help for an evaluation context of a module. Looks for context content,
+    and gives it a nice header, suitable for command-line help, applying formatting along the way.
+
+    :param gluetool.glue.Configurable source: object whose eval context help we should format.
+    :returns: Formatted help.
+    """
+
+    context_info = extract_eval_context_info(source)
+
+    if not context_info:
+        return ''
+
+    context_content = {
+        name: docstring_to_help(description, line_prefix='') for name, description in context_info.iteritems()
+    }
+
+    return jinja2.Template("""
+{{ '** Evaluation context **' | style(fg='yellow') }}
+
+{% for name, description in CONTEXT.iteritems() %}
+  * {{ name | style(fg='blue') }}
+
+{{ description | indent(4, true) }}
+{% endfor %}
+""").render(CONTEXT=context_content).strip()
