@@ -32,6 +32,7 @@ Table of contents
 
    framework 
    howto-modules
+   features
    howto-tests
    howto-docs
    DEVELOPMENT

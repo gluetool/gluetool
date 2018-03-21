@@ -25,6 +25,7 @@ import os
 import sys
 
 import sphinx.ext.autodoc
+import sphinx.ext.todo
 import sphinx.environment
 import sphinx_rtd_theme
 from docutils.utils import get_source_line
@@ -44,6 +45,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.coverage',
+    'sphinx.ext.todo',
     'sphinx.ext.viewcode'
 ]
 
@@ -85,7 +87,7 @@ exclude_patterns = []
 pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = False
+todo_include_todos = True
 
 
 # -- Options for HTML output ----------------------------------------------
@@ -106,6 +108,9 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = []
+
+html_logo = 'gluetool-logo-100.png'
+html_favicon = 'favicon.ico'
 
 
 # -- Options for HTMLHelp output ------------------------------------------
