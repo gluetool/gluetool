@@ -12,6 +12,7 @@ import ast
 
 from functools import partial
 from six.moves import configparser
+from six import iteritems
 
 import enum
 import jinja2
@@ -933,7 +934,7 @@ class Configurable(LoggerMixin, object):
 
         # Sort options by their names - no code has a strong option on their order, so force
         # one to all users of this helper.
-        option_names = sorted(options.keys(), key=lambda x: x[1] if isinstance(x, tuple) else x)
+        option_names = sorted(list(options.keys()), key=lambda x: x[1] if isinstance(x, tuple) else x)
 
         for names in option_names:
             params = options[names]
@@ -2592,6 +2593,11 @@ class Glue(Configurable):
                 # note that groups is None if all groups should be shown
                 if groups and group_name not in groups:
                     continue
+
+                usage.append('')
+                usage.append('%-2s%s' % (' ', group))
+                for key, val in sorted(iteritems(plist[group])):
+                    usage.append('%-4s%-32s %s' % ('', key, val))
 
                 group = as_groups[group_name]
 

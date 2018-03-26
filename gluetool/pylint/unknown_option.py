@@ -11,6 +11,7 @@ import astroid
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
 
+import six
 
 BASE_ID = 76
 

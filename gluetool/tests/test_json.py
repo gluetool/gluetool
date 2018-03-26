@@ -1,6 +1,7 @@
 import json
 import re
 import string
+from __future__ import print_function
 
 import pytest
 from hypothesis import assume, given, strategies as st
@@ -52,4 +53,4 @@ def test_error(tmpdir):
 
     with pytest.raises(gluetool.GlueError,
                        match=r"(?ms)Unable to load JSON file '{}': Expecting object: line 1 column 1 \(char 0\)".format(re.escape(filepath))):
-        print load_json(filepath)
+        print(load_json(filepath))

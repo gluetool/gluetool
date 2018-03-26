@@ -5,6 +5,8 @@ Proxying object wrapper.
 # Proxy class comes from the AS recipe
 # http://code.activestate.com/recipes/496741-object-proxying/
 
+from builtins import object
+
 
 class Proxy(object):
     # pylint: disable=too-few-public-methods
@@ -33,7 +35,7 @@ class Proxy(object):
     def __setattr__(self, name, value):
         setattr(object.__getattribute__(self, "_obj"), name, value)
 
-    def __nonzero__(self):
+    def __boolo__(self):
         return bool(object.__getattribute__(self, "_obj"))
 
     def __str__(self):

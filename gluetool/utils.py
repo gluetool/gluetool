@@ -21,6 +21,7 @@ import time
 import urllib2
 import warnings
 
+from six import iteritems
 from six.moves import urllib
 import bs4
 import urlnormalizer
@@ -951,7 +952,7 @@ def render_template(template, logger=None, **kwargs):
 
             return str(template.render(**kwargs).strip())
 
-        if isinstance(template, (str, unicode)):
+        if isinstance(template, six.string_types):
             return _render(jinja2.Template(template), template)
 
         if isinstance(template, jinja2.environment.Template):
@@ -1067,7 +1068,7 @@ def _json_byteify(data, ignore_dicts=False):
     # type: (Any, Optional[bool]) -> Any
 
     # if this is a unicode string, return its string representation
-    if isinstance(data, unicode):
+    if isinstance(data, str):
         return data.encode('utf-8')
 
     # if this is a list of values, return list of byteified values
@@ -1079,7 +1080,7 @@ def _json_byteify(data, ignore_dicts=False):
     if isinstance(data, dict) and not ignore_dicts:
         return {
             _json_byteify(key, ignore_dicts=True): _json_byteify(value, ignore_dicts=True)
-            for key, value in data.iteritems()
+            for key, value in iteritems(data)
         }
 
     # if it's anything else, return it in its original form
@@ -1239,7 +1240,7 @@ class SimplePatternMap(LoggerMixin, object):
             if not isinstance(pattern_dict, dict):
                 raise GlueError("Invalid format: '- <pattern>: <result>' expected, '{}' found".format(pattern_dict))
 
-            pattern = pattern_dict.keys()[0]
+            pattern = list(pattern_dict.keys())[0]
             result = pattern_dict[pattern].strip()
 
             # Apply variables if requested.
@@ -1547,7 +1548,7 @@ def new_xml_element(tag_name, _parent=None, **attrs):
 
     element = bs4.BeautifulSoup('', 'xml').new_tag(tag_name)
 
-    for name, value in attrs.iteritems():
+    for name, value in iteritems(attrs):
         element[name] = value
 
     if _parent is not None:

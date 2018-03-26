@@ -31,6 +31,7 @@ The actual names of these variables can be changed when creating an instance of
 import os
 
 import raven
+from six import iteritems
 
 import gluetool
 import gluetool.log
@@ -93,7 +94,7 @@ class Sentry(object):
         context = {}
 
         # env variables
-        for name, value in os.environ.iteritems():
+        for name, value in iteritems(os.environ):
             context['env.{}'.format(name)] = value
 
         self._client.extra_context(context)
@@ -166,7 +167,7 @@ class Sentry(object):
         tags = kwargs.pop('tags', {})
         fingerprint = kwargs.pop('fingerprint', ['{{ default }}'])
 
-        for env_var, tag in self._tag_map.iteritems():
+        for env_var, tag in iteritems(self._tag_map):
             if env_var not in os.environ:
                 continue
 
