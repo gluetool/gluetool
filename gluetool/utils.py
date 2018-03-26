@@ -23,7 +23,7 @@ import warnings
 
 from six.moves import urllib
 import bs4
-import urlnorm
+import urlnormalizer
 import jinja2
 import requests as original_requests
 
@@ -907,6 +907,7 @@ def treat_url(url, logger=None):
     :param str url: URL to clear.
     :param gluetool.log.ContextAdapter logger: logger to use for logging.
     :rtype: str
+    :raises: gluetool.glue.GlueErrorL: if URL is invalid
     :returns: Treated URL.
     """
 
@@ -914,18 +915,12 @@ def treat_url(url, logger=None):
 
     logger.debug("treating a URL '{}'".format(url))
 
-    try:
-        url = str(urlnorm.norm(url))
+    norm_url = str(urlnormalizer.normalize_url(url))
 
-    except urlnorm.InvalidUrl as exc:
-        # urlnorm cannot handle localhost: https://github.com/jehiah/urlnorm/issues/3
-        if exc.message == "host u'localhost' is not valid":
-            pass
+    if norm_url is None:
+        raise GlueError("'{}' does not look like an URL".format(url))
 
-        else:
-            raise exc
-
-    return url.strip()
+    return norm_url.strip()
 
 
 def render_template(template, logger=None, **kwargs):
