@@ -9,13 +9,16 @@ import signal
 import sys
 import traceback
 
+import tabulate
+
 import gluetool
 import gluetool.sentry
 
 from gluetool import GlueError, GlueRetryError, Failure
+from gluetool.help import extract_eval_context_info, docstring_to_help
 from gluetool.glue import PipelineStep
 from gluetool.log import log_dict
-from gluetool.utils import format_command_line, cached_property, normalize_path
+from gluetool.utils import format_command_line, cached_property, normalize_path, render_template
 
 
 # Order is important, the later one overrides values from the former
@@ -312,8 +315,6 @@ class Gluetool(object):
             sys.exit(0)
 
         if Glue.option('list-shared'):
-            import tabulate
-
             functions = []
 
             for mod_name in Glue.module_list():
@@ -329,6 +330,38 @@ class Gluetool(object):
 
 {}
             """.format(tabulate.tabulate(functions, ['Shared function', 'Module name'], tablefmt='simple')))
+
+            sys.exit(0)
+
+        if Glue.option('list-eval-context'):
+            variables = []
+
+            def _add_variables(source):
+                info = extract_eval_context_info(source)
+
+                for name, description in info.iteritems():
+                    variables.append([
+                        name, source.name, docstring_to_help(description, line_prefix='')
+                    ])
+
+            for mod_name in Glue.module_list():
+                _add_variables(Glue.init_module(mod_name))
+
+            _add_variables(Glue)
+
+            if variables:
+                variables = sorted(variables, key=lambda row: row[0])
+
+            else:
+                variables = [['-- no variables available --', '', '']]
+
+            table = tabulate.tabulate(variables, ['Variable', 'Module name', 'Description'], tablefmt='simple')
+
+            print render_template("""
+{{ '** Variables available in eval context **' | style(fg='yellow') }}
+
+{{ TABLE }}
+            """, TABLE=table)
 
             sys.exit(0)
 

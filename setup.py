@@ -37,7 +37,7 @@ if __name__ == '__main__':
               'ruamel.yaml==0.15.34',
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.1.9',
-              'tabulate==0.7.7',
+              'tabulate==0.8.2',
               'urlnorm==1.1.4'
           ],
           description='Python framework for constructing command-line pipelines',
