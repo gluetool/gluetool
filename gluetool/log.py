@@ -102,7 +102,7 @@ At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
-    Local variables:{% for name in frame.f_locals.iterkeys() | sort %}
+    Local variables:{% for name in frame.f_locals.items() | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
 {% endfor %}
