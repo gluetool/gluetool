@@ -212,7 +212,13 @@ def rst_to_text(text):
     :returns: plain text representation of ``text``.
     """
 
-    return cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
+    text = cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
+
+    # in Python3 the publish_string returns bytes, convert it to string
+    if isinstance(text, bytes):
+        return str(text, 'utf-8')
+
+    return text
 
 
 def trim_docstring(docstring):

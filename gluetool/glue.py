@@ -2240,6 +2240,7 @@ class Glue(Configurable):
 
         except GlueError as exc:
             self.warn("ignoring file '{}': {}".format(filepath, exc))
+
             return
 
         return pm
