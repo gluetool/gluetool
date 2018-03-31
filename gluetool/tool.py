@@ -12,6 +12,8 @@ import signal
 import sys
 import traceback
 
+from six import iteritems
+
 import tabulate
 
 import gluetool
@@ -383,7 +385,7 @@ class Gluetool(object):
 
                 info = extract_eval_context_info(source)
 
-                for name, description in info.iteritems():
+                for name, description in iteritems(info):
                     variables.append([
                         name, source.name, docstring_to_help(description, line_prefix='')
                     ])
@@ -401,11 +403,11 @@ class Gluetool(object):
 
             table = tabulate.tabulate(variables, ['Variable', 'Module name', 'Description'], tablefmt='simple')
 
-            print render_template("""
+            print(render_template("""
 {{ '** Variables available in eval context **' | style(fg='yellow') }}
 
 {{ TABLE }}
-            """, TABLE=table)
+            """, TABLE=table))
 
             sys.exit(0)
 
