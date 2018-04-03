@@ -1,10 +1,12 @@
 # pylint: disable=blacklisted-name
 
 import errno
+import re
+import string
 import subprocess
 
 import pytest
-
+from hypothesis import assume, given, strategies as st
 from mock import MagicMock
 
 import gluetool
@@ -186,6 +188,33 @@ def test_invalid_stdout(popen, log):
         run_command(command, stdout=(13, 17))
 
     _assert_logging(log, 3, command)
+
+
+@given(
+    command=st.lists(
+        st.one_of(
+            # common strings
+            st.text(alphabet=string.ascii_lowercase + '/~,"\'', min_size=1),
+            # make sure we test strings wrapped by quotes...
+            st.text(alphabet=string.ascii_lowercase + '/~,"\'', min_size=1).map(lambda s: '"{}"'.format(s)),
+            # ... and single quotes as well
+            st.text(alphabet=string.ascii_lowercase + '/~,"\'', min_size=1).map(lambda s: '\'{}\''.format(s))
+        ), min_size=1
+    )
+)
+def test_apply_quotes(command):
+    expected = []
+
+    for item in command:
+        if ' ' in command and not re.match('^".*?"$', item) and not re.match('\'.*?\'$', item):
+            item = '"{}"'.format(item.replace('"', r'\"'))
+
+        expected.append(item)
+
+    command = Command(command)
+    command.quote_args = True
+
+    assert command._apply_quotes() == expected
 
 
 # This part of run_command probably needs refactoring, to be really testable... it's way
