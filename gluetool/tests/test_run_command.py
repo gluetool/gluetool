@@ -9,7 +9,7 @@ from mock import MagicMock
 
 import gluetool
 from gluetool.log import format_dict
-from gluetool.utils import run_command
+from gluetool.utils import Command, run_command
 
 
 @pytest.fixture(name='popen')
@@ -30,15 +30,15 @@ def fixture_popen(monkeypatch):
 
 def test_invalid_cmd():
     """
-    ``run_command`` accepts inly a list of strings.
+    ``Command`` accepts only a list of strings.
     """
 
-    with pytest.raises(AssertionError, match=r'^Only list of strings accepted as a command$'):
-        run_command('/bin/ls')
+    with pytest.raises(gluetool.GlueError, match=r'^Only list of strings is accepted$'):
+        Command('/bin/ls').run()
 
     with pytest.raises(gluetool.GlueError,
-                       match=r"^Only list of strings accepted as a command, \[<type 'str'>, <type 'int'>\] found$"):
-        run_command(['/bin/ls', 13])
+                       match=r"^Only list of strings is accepted, \[<type 'str'>, <type 'int'>\] found$"):
+        Command(['/bin/ls', 13]).run()
 
 
 def _assert_logging(log, record_count, cmd, stdout=None, stderr=None, stdout_index=4, stderr_index=5):
@@ -64,7 +64,7 @@ def test_sanity(popen, log):
     popen.return_value.communicate.return_value = ('root listing', '')
 
     command = ['/bin/ls', '/']
-    output = run_command(command)
+    output = Command(command).run()
 
     assert output.exit_code == 0
     assert output.stdout == 'root listing'
@@ -94,7 +94,7 @@ def test_oserror(popen, log, actual_errno, expected_exc, expected_message):
     command = ['/bin/foo']
 
     with pytest.raises(expected_exc, match=r'^{}$'.format(expected_message)):
-        run_command(command)
+        Command(command).run()
 
     _assert_logging(log, 3, command)
 
@@ -110,7 +110,7 @@ def test_exit_code_error(popen, log):
 
     with pytest.raises(gluetool.GlueCommandError, match=r"^Command '\['/bin/foo'\]' failed with exit code 1$") \
             as excinfo:
-        run_command(command)
+        Command(command).run()
 
     _assert_logging(log, 6, command,
                     stdout='stdout:\n  command produced no output',
@@ -133,7 +133,7 @@ def test_std_streams_mix(popen, log):
 
     command = ['/bin/foo']
 
-    output = run_command(command)
+    output = Command(command).run()
 
     assert output.exit_code == 0
     assert output.stdout == 'This goes to stdout\n'
@@ -155,7 +155,7 @@ def test_forwarding(popen, log, actual_comm, stdout, stderr):
 
     command = ['/bin/foo']
 
-    output = run_command(command, stdout=stdout[0], stderr=stderr[0])
+    output = Command(command).run(stdout=stdout[0], stderr=stderr[0])
 
     assert output.exit_code == 0
     assert output.stdout == stdout[2]
@@ -183,7 +183,7 @@ def test_invalid_stdout(popen, log):
     command = ['/bin/foo']
 
     with pytest.raises(AttributeError, match=r"^'tuple' object has no attribute 'fileno'$"):
-        run_command(command, stdout=(13, 17))
+        Command(command).run(stdout=(13, 17))
 
     _assert_logging(log, 3, command)
 

@@ -6,6 +6,7 @@ Various helpers.
 
 import collections
 import errno
+import functools
 import json
 import os
 import pipes
@@ -15,6 +16,7 @@ import sys
 import threading
 import time
 import urllib2
+import warnings
 
 import bs4
 import urlnorm
@@ -36,6 +38,24 @@ try:
     from subprocess import DEVNULL
 except ImportError:
     DEVNULL = open(os.devnull, 'wb')
+
+
+def deprecated(func):
+    """
+    This is a decorator which can be used to mark functions as deprecated. It will result in a warning being emitted
+    when the function is used.
+    """
+
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.simplefilter('always', DeprecationWarning)  # turn off filter
+        warnings.warn('Function {} is deprecated.'.format(func.__name__), category=DeprecationWarning,
+                      stacklevel=2)
+        warnings.simplefilter('default', DeprecationWarning)  # reset filter
+
+        return func(*args, **kwargs)
+
+    return new_func
 
 
 def dict_update(dst, *args):
@@ -317,173 +337,249 @@ class ProcessOutput(object):
         self.log_stream('stderr', logger)
 
 
-def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs):
+class Command(object):
     """
-    Run external command, and return it's exit code and output.
+    Wrap an external command, its options and other information, necessary for running the command.
 
-    This is a very thin and simple wrapper above :py:class:`subprocess.Popen`,
-    and its main purpose is to log everything that happens before and after
-    execution. All additional arguments are passed directly to `Popen` constructor.
+    The main purpose is to gather all relevant pieces into a single space, call :py:class:`subprocess.Popen`,
+    and log everything.
 
-    If ``stdout`` or ``stderr`` keyword arguments are not specified, function
-    will set them to :py:const:`subprocess.PIPE`, to capture both output streams
-    in separate strings.
-
-    By default, output of the process is captured for both ``stdout`` and ``stderr``,
-    and returned back to the caller. Under some conditions, caller might want to see
-    the output in "real-time". For that purpose, it can pass callable via ``inspect_callback``
-    parameter - such callable will be called for every received bit of input on both
-    ``stdout`` and ``stderr``. E.g.
+    By default, both standard output and error output are of the process are captured and returned back to
+    caller. Under some conditions, caller might want to see the output in "real-time". For that purpose,
+    they can pass callable via ``inspect_callback`` parameter - such callable will be called for every received
+    bit of input on both standard and error outputs. E.g.
 
     .. code-block:: python
 
        def foo(stream, s, flush=False):
-         if s is not None and 'a' in s:
-           print s
+           if s is not None and 'a' in s:
+               print s
 
-       run_command(['/bin/foo'], inspect=foo)
+       Command(['/bin/foo']).run(inspect=foo)
 
-    This example will print all substrings containing letter `a`. Strings passed to ``foo``
-    may be of arbitrary lengths, and may change between subsequent calls of ``run_command``.
+    This example will print all substrings containing letter `a`. Strings passed to ``foo`` may be of arbitrary
+    lengths, and may change between subsequent use of ``Command`` class.
 
-    :param list cmd: command to execute.
-    :param gluetool.log.ContextAdapter logger: parent logger whose methods will be used for logging.
-    :param bool inspect: if set, ``inspect_callback`` will receive the output of command in "real-time".
-    :param callable inspect_callback: callable that will receive command output. If not set,
-        default "write to ``sys.stdout``" is used.
-    :rtype: gluetool.utils.ProcessOutput instance
-    :returns: :py:class:`gluetool.utils.ProcessOutput` instance whose attributes contain
-        data returned by the process.
-    :raises gluetool.glue.GlueError: when command was not found.
-    :raises gluetool.glue.GlueCommandError: when command exited with non-zero exit code.
-    :raises Exception: when anything else breaks.
+    :param list executable: Executable to run. Feel free to use the whole command, including its options,
+        if you have no intention to modify them before running the command.
+    :param list options: If set, it's a list of options to pass to the ``executable``. Options are
+        specified in a separate list to allow modifications of ``executable`` and ``options``
+        before actually running the command.
+    :param gluetool.log.ContextAdapter logger: Parent logger whose methods will be used for logging.
+
+
+    .. versionadded:: 1.1
     """
 
-    assert isinstance(cmd, list), 'Only list of strings accepted as a command'
+    # pylint: disable=too-few-public-methods
 
-    if not all((isinstance(s, str) for s in cmd)):
-        raise GlueError('Only list of strings accepted as a command, {} found'.format([type(s) for s in cmd]))
+    def __init__(self, executable, options=None, logger=None):
+        self.logger = logger or ContextAdapter(Logging.get_logger())
+        self.logger.connect(self)
 
-    logger = logger or Logging.get_logger()
+        self.executable = executable
+        self.options = options or []
 
-    stdout, stderr = None, None
+        self.use_shell = False
+        self.quote_args = False
 
-    # Set default stdout/stderr, unless told otherwise
-    if 'stdout' not in kwargs:
-        kwargs['stdout'] = subprocess.PIPE
+        self._command = None
+        self._popen_kwargs = None
+        self._process = None
+        self._exit_code = None
 
-    if 'stderr' not in kwargs:
-        kwargs['stderr'] = subprocess.PIPE
+        self._stdout = None
+        self._stderr = None
 
-    def _format_stream(stream):
-        if stream == subprocess.PIPE:
-            return 'PIPE'
-        if stream == DEVNULL:
-            return 'DEVNULL'
-        if stream == subprocess.STDOUT:
-            return 'STDOUT'
-        return stream
+    def _apply_quotes(self):
+        """
+        Return options to pass to ``Popen``. Applies quotes as necessary.
+        """
 
-    printable_kwargs = kwargs.copy()
-    for stream in ('stdout', 'stderr'):
-        if stream in printable_kwargs:
-            printable_kwargs[stream] = _format_stream(printable_kwargs[stream])
+        if not self.quote_args:
+            return self.executable + self.options
 
-    # Make tests happy by sorting kwargs - it's a dictionary, therefore
-    # unpredictable from the observer's point of view. Can print its entries
-    # in different order with different Pythons, making tests a mess.
-    # sorted_kwargs = ', '.join(["'%s': '%s'" % (k, printable_kwargs[k]) for k in sorted(printable_kwargs.iterkeys())])
+        # escape apostrophes in strings and adds them around strings with space
+        return [('"{}"'.format(option.replace('"', r'\"')) if ' ' in option and not
+                 (
+                     (option.startswith('"') and option.endswith('"')) or
+                     (option.startswith("'") and option.endswith("'")))
+                 else option) for option in self.executable + self.options]
 
-    log_dict(logger.debug, 'command', cmd)
-    log_dict(logger.debug, 'kwargs', printable_kwargs)
-    log_blob(logger.debug, 'runnable (copy & paste)', format_command_line([cmd]))
+    def _communicate_batch(self):
+        self._stdout, self._stderr = self._process.communicate()
 
-    try:
-        p = subprocess.Popen(cmd, **kwargs)
+    def _communicate_inspect(self, inspect_callback):
+        # let's capture *both* streams - capturing just a single one leads to so many ifs
+        # and elses and messy code
+        p_stdout = StreamReader(self._process.stdout, name='<stdout>')
+        p_stderr = StreamReader(self._process.stderr, name='<stderr>')
 
-        if inspect is True:
-            # let's capture *both* streams - capturing just a single one leads to so many ifs
-            # and elses and messy code
-            p_stdout = StreamReader(p.stdout, name='<stdout>')
-            p_stderr = StreamReader(p.stderr, name='<stderr>')
+        if inspect_callback is None:
+            def stdout_write(stream, data, flush=False):
+                # pylint: disable=unused-argument
 
-            if inspect_callback is None:
-                def stdout_write(stream, data, flush=False):
-                    # pylint: disable=unused-argument
+                if data is None:
+                    return
 
-                    if data is None:
-                        return
+                # Not suitable for multiple simultaneous commands. Shuffled output will
+                # ruin your day. And night. And few following weeks, full of debugging, as well.
+                sys.stdout.write(data)
+                sys.stdout.flush()
 
-                    # Not suitable for multiple simultaneous commands. Shuffled output will
-                    # ruin your day. And night. And few following weeks, full of debugging, as well.
-                    sys.stdout.write(data)
-                    sys.stdout.flush()
+            inspect_callback = stdout_write
 
-                inspect_callback = stdout_write
+        inputs = (p_stdout, p_stderr)
 
-            inputs = (p_stdout, p_stderr)
+        with BlobLogger('Output of command: {}'.format(format_command_line([self._command])),
+                        outro='End of command output',
+                        writer=self.info):
+            self.debug("output of command is inspected by the caller")
+            self.debug('following blob-like header and footer are expected to be empty')
+            self.debug('the captured output will follow them')
 
-            with BlobLogger('Output of command: {}'.format(format_command_line([cmd])), outro='End of command output',
-                            writer=logger.info):
-                logger.debug("output of command is inspected by the caller")
-                logger.debug('following blob-like header and footer are expected to be empty')
-                logger.debug('the captured output will follow them')
+            # As long as process runs, keep calling callbacks with incoming data
+            while True:
+                for stream in inputs:
+                    inspect_callback(stream, stream.read())
 
-                # As long as process runs, keep calling callbacks with incoming data
+                if self._process.poll() is not None:
+                    break
+
+                # give up OS' attention and let others run
+                # time.sleep(0) is a Python synonym for "thread yields the rest of its quantum"
+                time.sleep(0.1)
+
+            # OK, process finished but we have to wait for our readers to finish as well
+            p_stdout.wait()
+            p_stderr.wait()
+
+            for stream in inputs:
                 while True:
-                    for stream in inputs:
-                        inspect_callback(stream, stream.read())
+                    data = stream.read()
 
-                    if p.poll() is not None:
+                    if data in ('', None):
                         break
 
-                    # give up OS' attention and let others run
-                    # time.sleep(0) is a Python synonym for "thread yields the rest of its quantum"
-                    time.sleep(0.1)
+                    inspect_callback(stream, data)
 
-                # OK, process finished but we have to wait for our readers to finish as well
-                p_stdout.wait()
-                p_stderr.wait()
+                inspect_callback(stream, None, flush=True)
 
-                for stream in inputs:
-                    while True:
-                        data = stream.read()
+        self._stdout, self._stderr = p_stdout.content, p_stderr.content
 
-                        if data in ('', None):
-                            break
+    def _construct_output(self):
+        output = ProcessOutput(self._command, self._exit_code, self._stdout, self._stderr, self._popen_kwargs)
 
-                        inspect_callback(stream, data)
+        output.log(self.debug)
 
-                    inspect_callback(stream, None, flush=True)
+        return output
 
-            stdout, stderr = p_stdout.content, p_stderr.content
+    def run(self, inspect=False, inspect_callback=None, **kwargs):
+        """
+        Run the command, wait for it to finish and return the output.
 
-        else:
-            stdout, stderr = p.communicate()
+        :param bool inspect: If set, ``inspect_callback`` will receive the output of command in "real-time".
+        :param callable inspect_callback: callable that will receive command output. If not set, default
+            "write to ``sys.stdout``" is used.
+        :rtype: gluetool.utils.ProcessOutput instance
+        :returns: :py:class:`gluetool.utils.ProcessOutput` instance whose attributes contain data returned
+            by the child process.
+        :raises gluetool.glue.GlueError: When somethign went wrong.
+        :raises gluetool.glue.GlueCommandError: When command exited with non-zero exit code.
+        """
 
-    except OSError as e:
-        if e.errno == errno.ENOENT:
-            raise GlueError("Command '{}' not found".format(cmd[0]))
+        # pylint: disable=too-many-branches
 
-        raise e
+        def _check_types(items):
+            if not isinstance(items, list):
+                raise GlueError('Only list of strings is accepted')
 
-    exit_code = p.poll()
+            if not all((isinstance(s, str) for s in items)):
+                raise GlueError('Only list of strings is accepted, {} found'.format([type(s) for s in items]))
 
-    output = ProcessOutput(cmd, exit_code, stdout, stderr, kwargs)
+        _check_types(self.executable)
+        _check_types(self.options)
 
-    output.log(logger.debug)
+        self._command = self._apply_quotes()
 
-    if exit_code != 0:
-        raise GlueCommandError(cmd, output)
+        if self.use_shell is True:
+            self._command = [' '.join(self._command)]
 
-    return output
+        # Set default stdout/stderr, unless told otherwise
+        if 'stdout' not in kwargs:
+            kwargs['stdout'] = subprocess.PIPE
+
+        if 'stderr' not in kwargs:
+            kwargs['stderr'] = subprocess.PIPE
+
+        if self.use_shell:
+            kwargs['shell'] = True
+
+        self._popen_kwargs = kwargs
+
+        def _format_stream(stream):
+            if stream == subprocess.PIPE:
+                return 'PIPE'
+            if stream == DEVNULL:
+                return 'DEVNULL'
+            if stream == subprocess.STDOUT:
+                return 'STDOUT'
+            return stream
+
+        printable_kwargs = kwargs.copy()
+        for stream in ('stdout', 'stderr'):
+            if stream in printable_kwargs:
+                printable_kwargs[stream] = _format_stream(printable_kwargs[stream])
+
+        log_dict(self.debug, 'command', self._command)
+        log_dict(self.debug, 'kwargs', printable_kwargs)
+        log_blob(self.debug, 'runnable (copy & paste)', format_command_line([self._command]))
+
+        try:
+            self._process = subprocess.Popen(self._command, **self._popen_kwargs)
+
+            if inspect is True:
+                self._communicate_inspect(inspect_callback)
+
+            else:
+                self._communicate_batch()
+
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                raise GlueError("Command '{}' not found".format(self._command[0]))
+
+            raise e
+
+        self._exit_code = self._process.poll()
+
+        output = self._construct_output()
+
+        if self._exit_code != 0:
+            raise GlueCommandError(self._command, output)
+
+        return output
+
+
+@deprecated
+def run_command(cmd, logger=None, **kwargs):
+    """
+    Wrapper for ``Command(...).run().
+
+    Provided for backward compatibility.
+
+    .. deprecated:: 1.1
+
+        Use :py:class:`gluetool.utils.Command` instead.
+    """
+
+    return Command(cmd, logger=logger).run(**kwargs)
 
 
 def check_for_commands(cmds):
     """ Checks if all commands in list cmds are valid """
     for cmd in cmds:
         try:
-            run_command(['/bin/bash', '-c', 'command -v {}'.format(cmd)], stdout=DEVNULL)
+            Command(['/bin/bash', '-c', 'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
 
         except GlueError:
             raise GlueError("Command '{}' not found on the system".format(cmd))
