@@ -64,7 +64,7 @@ Shared functions
 
 See the :ref:`framework's documentation <shared-functions>` for introduction into shared functions.
 
-A module can define any number of shared functions by listing their name as a string in the :py:attr:`gluetool.glue.Module.shared_functions <shared_functions>` list. The shared functions are made available to other modules after the module has been executed. This makes it possible for the module to redefine the previously defined shared functions with their own version.
+A module can define any number of shared functions by decorating its methods with :py:func:`gluetool.shared_function` decorator. The shared functions are made available to other modules after the module has been executed. This makes it possible for the module to redefine the previously defined shared functions with their own version.
 
 Here is an example of a simple module that exposes myapi shared function and takes one optional argument specifying the api version.
 
@@ -75,8 +75,7 @@ Here is an example of a simple module that exposes myapi shared function and tak
     class MyApiModule(gluetool.Module):
         name = 'myapi'
 
-        shared_functions = ['myapi']
-
+        @gluetool.shared_function
         def myapi(self, api_version=1):
             return 'My Api version: {}'.format(api_version)
 
@@ -108,8 +107,8 @@ For example, imagine two "publishing" modules - one sends messages to "alpha", t
 
     class PublishAlpha(gluetool.Module):
         name = 'publish-alpha'
-        shared_functions = ['publish']
 
+        @gluetool.shared_function
         def publish(self, message):
             self.info("publishing to alpha '{}'".format(message))
             self.overloaded_shared('publish', message)
@@ -120,8 +119,8 @@ For example, imagine two "publishing" modules - one sends messages to "alpha", t
 
     class PublishOmega(gluetool.Module):
         name = 'publish-omega'
-        shared_functions = ['publish']
 
+        @gluetool.shared_function
         def publish(self, message):
             self.info("publishing to omega '{}'".format(message))
             self.overloaded_shared('publish', message)

@@ -3,6 +3,7 @@
 import argparse
 import ConfigParser
 import imp
+import inspect
 import logging
 import os
 import sys
@@ -202,6 +203,36 @@ def retry(*args):
     return wrap
 
 
+def shared_function(*args, **kwargs):
+    """
+    Use to mark module method as shared.
+
+    :param str name: If set, it is used as a shared function name instead of ``__name__`` of decorated function.
+    """
+
+    name = kwargs.pop('name', None)
+
+    def shared_function_decorator(func):
+        # pylint: disable=protected-access
+
+        # mark original function to be shared, to tell it apart from other methods
+        func._gluetool_shared_function = True
+
+        # record desired name - may be different from __name__
+        func._gluetool_shared_name = name or func.__name__
+
+        return func
+
+    # If the outer function gets an argument, it's been called without parameters (@shared_function).
+    # in that case, apply decorator.
+    if args:
+        return shared_function_decorator(args[0])
+
+    # Without any argument, kwargs were provided (@shared_function(name=...)), and in that case
+    # we return the decorator itself - Python will apply later to the decorated function.
+    return shared_function_decorator
+
+
 class PipelineStep(object):
     # pylint: disable=too-few-public-methods
     """
@@ -312,6 +343,13 @@ class Configurable(object):
     """
     Unque name of this instance. Used by modules, has no meaning elsewhere, but since dry-run
     checks are done on this level, it must be declared here to make pylint happy :/
+    """
+
+    shared_functions = ()
+    """
+    Iterable of shared function names provided by the module.
+
+    This is a legacy method of specifying shared functions, use ``@gluetool.shared`` decorator instead.
     """
 
     @staticmethod
@@ -676,6 +714,41 @@ class Configurable(object):
 
         return {}
 
+    # This method cannot be a property, because it uses ``inspect.getmembers(self)`` to find all
+    # members of ``self``, and pick those decorated with ``shared_function`` decorator. ``getmembers``
+    # will return list of pairs (name, member), and one of those mebers would be ``_shared_functions``
+    # property, and ``getmembers`` would trigger property's getter, which would be this method, calling
+    # ``getmembers`` again, depleting the stack in an endless recursion.
+    # On the other hand, ``member`` in the case of a mere method is just the method, not its return
+    # value, so method is safe.
+    def _shared_functions(self):
+        """
+        Return all shared functions exported by this instance.
+
+        :rtype: dict(name, callable)
+        """
+
+        functions = {}
+
+        # First, find all shared functions specified using "legacy" method, listing them in self.shared_functions
+
+        # This could be written as a dictionary comprehension but in the case of an attribute error, we'd have
+        # to parse function name from exception's args.
+        for name in self.shared_functions:
+            if not hasattr(self, name):
+                raise GlueError("No such shared function '{}' of module '{}'".format(name, self.unique_name))
+
+            functions[name] = getattr(self, name)
+
+        # Second, check all methods of self, and find those decorated by @shared_function
+        # pylint: disable=protected-access
+        functions.update({
+            method._gluetool_shared_name: method for name, method in inspect.getmembers(self, inspect.ismethod)
+            if getattr(method, '_gluetool_shared_function', False)
+        })
+
+        return functions
+
 
 class Module(Configurable):
     """
@@ -699,9 +772,6 @@ class Module(Configurable):
 
     description = None
     """Short module description, displayed in ``gluetool``'s module listing."""
-
-    shared_functions = []
-    """Iterable of names of shared functions exported by the module."""
 
     def _paths_with_module(self, roots):
         """
@@ -754,18 +824,16 @@ class Module(Configurable):
         :returns: Formatted help, describing module's shared functions.
         """
 
-        if not self.shared_functions:
+        shared_functions = self._shared_functions()
+
+        if not shared_functions:
             return ''
 
         from .help import functions_help
 
-        functions = []
-
-        for name in self.shared_functions:
-            if not hasattr(self, name):
-                raise GlueError("No such shared function '{}' of module '{}'".format(name, self.unique_name))
-
-            functions.append((name, getattr(self, name)))
+        functions = [
+            (name, func) for name, func in shared_functions.iteritems()
+        ]
 
         return jinja2.Template(trim_docstring("""
         {{ '** Shared functions **' | style(fg='yellow') }}
@@ -798,20 +866,24 @@ class Module(Configurable):
 
         return None
 
-    def add_shared(self):
+    def register_shared(self):
         """
-        Register module's shared functions with Glue, to allow other modules
-        to use them.
+        Register all module's shared functions with Glue, making them available to other modules.
         """
 
-        for funcname in self.shared_functions:
+        for funcname, func in self._shared_functions().iteritems():
             if self.has_shared(funcname):
                 self._overloaded_shared_functions[funcname] = self.get_shared(funcname)
 
-            self.glue.add_shared(funcname, self)
+            self.glue.register_shared(funcname, self, func)
 
-    def del_shared(self, funcname):
-        self.glue.del_shared(funcname)
+    def unregister_shared(self):
+        """
+        Unregister all shared functions of the module, making them unavailable to other modules.
+        """
+
+        for funcname in self._shared_functions().iterkeys():
+            self.glue.unregister_shared(funcname)
 
     def has_shared(self, funcname):
         return self.glue.has_shared(funcname)
@@ -878,6 +950,7 @@ class Glue(Configurable):
     """
 
     name = 'gluetool core'
+    unique_name = 'gluetool core'
 
     options = [
         ('Global options', {
@@ -1025,45 +1098,34 @@ class Glue(Configurable):
         See :py:meth:`gluetool.sentry.Sentry.submit_warning`.
         """
 
-    def _add_shared(self, funcname, module, func):
+    def register_shared(self, funcname, module, func):
         """
         Register a shared function. Overwrite previously registered function
         with the same name, if there was any such.
 
-        This is a helper method for easier testability. It is not a part of public API of this class.
-
         :param str funcname: Name of the shared function.
         :param gluetool.glue.Module module: Module instance providing the shared function.
-        :param callable func: Shared function.
+        :param callable func: The actual shared function.
         """
 
         self.debug("registering shared function '{}' of module '{}'".format(funcname, module.unique_name))
 
-        self.shared_functions[funcname] = (module, func)
+        self._shared_functions_registry[funcname] = (module, func)
 
-    def add_shared(self, funcname, module):
+    def unregister_shared(self, funcname):
         """
-        Register a shared function. Overwrite previously registered function
-        with the same name, if there was any such.
+        Unregister a shared function.
 
         :param str funcname: Name of the shared function.
-        :param gluetool.glue.Module module: Module instance providing the shared function.
         """
 
-        if not hasattr(module, funcname):
-            raise GlueError("No such shared function '{}' of module '{}'".format(funcname, module.name))
-
-        self._add_shared(funcname, module, getattr(module, funcname))
-
-    # delete a shared function if exists
-    def del_shared(self, funcname):
-        if funcname not in self.shared_functions:
+        if funcname not in self._shared_functions_registry:
             return
 
-        del self.shared_functions[funcname]
+        del self._shared_functions_registry[funcname]
 
     def has_shared(self, funcname):
-        return funcname in self.shared_functions
+        return funcname in self._shared_functions_registry
 
     def require_shared(self, *names, **kwargs):
         warn_only = kwargs.get('warn_only', False)
@@ -1087,13 +1149,13 @@ class Glue(Configurable):
         if not self.has_shared(funcname):
             return None
 
-        return self.shared_functions[funcname][1]
+        return self._shared_functions_registry[funcname][1]
 
     def shared(self, funcname, *args, **kwargs):
-        if funcname not in self.shared_functions:
+        if funcname not in self._shared_functions_registry:
             return None
 
-        return self.shared_functions[funcname][1](*args, **kwargs)
+        return self._shared_functions_registry[funcname][1](*args, **kwargs)
 
     @property
     def eval_context(self):
@@ -1110,6 +1172,7 @@ class Glue(Configurable):
             'ENV': dict(os.environ)
         }
 
+    @shared_function(name='eval_context')
     def _eval_context(self):
         """
         Gather contexts of all modules in a pipeline and merge them together.
@@ -1369,9 +1432,11 @@ class Glue(Configurable):
 
         #: Shared function registry.
         #: funcname: (module, fn)
-        self.shared_functions = {}
+        self._shared_functions_registry = {}
 
-        self._add_shared('eval_context', self, self._eval_context)
+        # register global shared functions
+        for funcname, func in self._shared_functions().iteritems():
+            self.register_shared(funcname, self, func)
 
     # pylint: disable=arguments-differ
     def parse_config(self, paths):
@@ -1515,7 +1580,7 @@ class Glue(Configurable):
 
         def _execute(module):
             module.execute()
-            module.add_shared()
+            module.register_shared()
 
         self._for_each_module(modules, _execute)
 
