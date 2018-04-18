@@ -75,12 +75,12 @@ class CaplogWrapper(object):
         return matcher(_cmp(record) for record in self.records)
 
 
-def create_module(module_class, glue=None, glue_class=NonLoadingGlue, name='dummy-module', add_shared=True):
+def create_module(module_class, glue=None, glue_class=NonLoadingGlue, name='dummy-module', register_shared=True):
     glue = glue or glue_class()
     mod = module_class(glue, name)
 
-    if add_shared is True:
-        mod.add_shared()
+    if register_shared is True:
+        mod.register_shared()
 
     return glue, mod
 

@@ -88,7 +88,7 @@ Below is an example of configuration for this ``openstack`` module.
 Shared Functions
 ^^^^^^^^^^^^^^^^
 
-Shared functions are the only way how modules can share data to the subsequent modules on the command-line pipeline. Each module can define a shared function via the :py:attr:`shared_functions <gluetool.glue.Module.shared_functions>` list. The available shared functions then can be easily called from any subsequent module being executed via the :py:meth:`shared <gluetool.glue.Module.shared>` method.
+Shared functions are the only way how modules can share data to the subsequent modules on the command-line pipeline. Each module can expose its shared functions by by decorating its methods by :py:attr:`shared_functions <gluetool.shared_function>` decorator. The available shared functions then can be easily called from any subsequent module being executed via the :py:meth:`shared <gluetool.glue.Module.shared>` method.
 
 To list all shared functions provided by the available modules, use the gluetool's `-L` option
 
