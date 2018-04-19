@@ -438,7 +438,10 @@ class LoggingFormatter(logging.Formatter):
         if record.exc_info \
                 and (self.log_tracebacks is True or Logging.stderr_handler.level in (logging.DEBUG, logging.VERBOSE)):
             fmt.append('{exc_text}')
-            values['exc_text'] = LoggingFormatter._format_exception_chain(record.exc_info)
+
+            # \n helps formatting - logging would add formatted chain right after the leading message
+            # without starting new line. We must do it, to make report more readable.
+            values['exc_text'] = '\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
 
         # List all context properties of record
         ctx_properties = [prop for prop in dir(record) if prop.startswith('ctx_')]
