@@ -740,12 +740,39 @@ class Configurable(object):
 
             functions[name] = getattr(self, name)
 
-        # Second, check all methods of self, and find those decorated by @shared_function
-        # pylint: disable=protected-access
-        functions.update({
-            method._gluetool_shared_name: method for name, method in inspect.getmembers(self, inspect.ismethod)
-            if getattr(method, '_gluetool_shared_function', False)
-        })
+        # Second, check members of self, and pick those that are 1) methods and 2) decorated by @shared_function
+        # Skip some well-known names that cannot be shared functions (by our choice).
+        ignored_members = [
+            # special Python functions
+            '__class__', '__delattr__', '__dict__', '__doc__', '__format__', '__getattribute__', '__hash__',
+            '__init__', '__module__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__',
+            '__sizeof__', '__str__', '__subclasshook__', '__weakref__',
+
+            # logging helpers
+            'debug', 'error', 'exception', 'info', 'logger', 'verbose', 'warn',
+
+            # other bits inherited from Module class
+            '_config', '_overloaded_shared_functions', 'data_path', 'glue'
+        ]
+
+        # Filter out members of the Module class - these cannot be shared functions, even contain properties
+        # like eval_context which may depend on yet unknown data internal to the module, and we must not cause
+        # their evaluation at this moment.
+        ignored_members += dir(Module)
+
+        interesting_members = [name for name in dir(self) if name not in ignored_members]
+
+        for name in interesting_members:
+            member = getattr(self, name)
+
+            if not inspect.ismethod(member):
+                continue
+
+            if not getattr(member, '_gluetool_shared_function', False):
+                continue
+
+            # pylint: disable=protected-access
+            functions[member._gluetool_shared_name] = member
 
         return functions
 
