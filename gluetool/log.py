@@ -38,9 +38,11 @@ Example usage:
 """
 
 import atexit
+import contextlib
 import json
 import logging
 import os
+import sys
 import traceback
 
 import jinja2
@@ -178,6 +180,60 @@ class BlobLogger(object):
 
         if self.on_finally:
             return self.on_finally(*args, **kwargs)
+
+
+class StreamToLogger(object):
+    """
+    Fake ``file``-like stream object that redirects writes to a given logging method.
+    """
+
+    # pylint: disable=too-few-public-methods
+
+    def __init__(self, log_fn):
+        self.log_fn = log_fn
+
+        self.linebuf = []
+
+    def write(self, buf):
+        for c in buf:
+            if ord(c) == ord('\n'):
+                self.log_fn(''.join(self.linebuf))
+                self.linebuf = []
+                continue
+
+            if ord(c) == ord('\r'):
+                continue
+
+            self.linebuf.append(c)
+
+
+@contextlib.contextmanager
+def print_wrapper(log_fn=None, label='print wrapper'):
+    """
+    While active, replaces :py:data:`sys.stdout` and :py:data:`sys.stderr` streams with
+    fake ``file``-like streams which send all outgoing data to a given logging method.
+
+    :param call log_fn: A callback that is called for every line, produced by ``print``.
+        If not set, a ``info`` method of ``gluetool`` main logger is used.
+    :param str label: short description, presented in the intro and outro headers, wrapping
+        captured output.
+    """
+
+    log_fn = log_fn or Logging.get_logger().info
+
+    fake_stream = StreamToLogger(log_fn)
+
+    log_fn('{} {} enabled'.format(BLOB_HEADER, label))
+
+    stdout, stderr, sys.stdout, sys.stderr = sys.stdout, sys.stderr, fake_stream, fake_stream
+
+    try:
+        yield
+
+    finally:
+        sys.stdout, sys.stderr = stdout, stderr
+
+        log_fn('{} {} disabled'.format(BLOB_FOOTER, label))
 
 
 def format_blob(blob):
@@ -348,6 +404,19 @@ class ModuleAdapter(ContextAdapter):
         super(ModuleAdapter, self).__init__(logger, {'ctx_module_name': (10, module.unique_name)})
 
 
+class PackageAdapter(ContextAdapter):
+    """
+    Custom logger dapter, adding a package name as a context. Intended to taint log
+    records produced by a 3rd party packages.
+
+    :logging.Logger logger: parent logger this adapter modifies.
+    :param str name: name of the library.
+    """
+
+    def __init__(self, logger, name):
+        super(PackageAdapter, self).__init__(logger, {'ctx_package_name': (50, name)})
+
+
 class LoggingFormatter(logging.Formatter):
     """
     Custom log record formatter. Produces output in form of:
@@ -515,6 +584,54 @@ class Logging(object):
 
         return Logging.logger
 
+    # Following methods are intended for 3rd party loggers one might want to connect to our
+    # logging configuration. Gluetool will configure properly its own logger and few others
+    # it knows about (e.g. "requests" has one interesting), but it has no idea what other
+    # loggers might be interesting for module developer. Therefore, these methods are used
+    # to A) setup loggers gluetool knows about, and B) public to allow module developer
+    # attach arbitrary loggers.
+
+    @staticmethod
+    def configure_logger(logger):
+        """
+        Configure given logger to conform with Gluetool's idea of logging. The logger is set to
+        ``VERBOSE`` level, shared stderr handler is added, and Sentry integration status is
+        propagated as well.
+
+        After this method, the logger will behave like Gluetool's main logger.
+        """
+
+        logger.propagate = False
+        logger.sentry_submit_warning = Logging.sentry_submit_warning
+
+        # logger actually emits everything, handlers do filtering
+        logger.setLevel(logging.VERBOSE)
+
+        # add stderr handler
+        logger.addHandler(Logging.stderr_handler)
+
+    @staticmethod
+    def enable_logger_debug(logger):
+        """
+        When ``-o`` option is given, Gluetool opens a file which receives all logging messages produced
+        by loggers governed by Gluetool. This method configures a given logger to follow the same rules,
+        all its messages will be captured in this file as well.
+        """
+
+        logger.addHandler(Logging.output_file_handler)
+
+    @staticmethod
+    def enable_logger_sentry(logger):
+        if not Logging.sentry:
+            return
+
+        Logging.sentry.enable_logging_breadcrumbs(logger)
+
+    OUR_LOGGERS = (
+        logging.getLogger('gluetool'),
+        logging.getLogger("urllib3")
+    )
+
     @staticmethod
     def create_logger(output_file=None, level=DEFAULT_LOG_LEVEL, sentry=None, sentry_submit_warning=None):
         """
@@ -542,48 +659,51 @@ class Logging(object):
 
         level = level or logging.INFO
 
+        # store for later use by configure_logger & co.
+        Logging.sentry = sentry
+        Logging.sentry_submit_warning = sentry_submit_warning
+
         if Logging.logger is None:
-            logger = Logging.logger = logging.getLogger('gluetool')
+            # we're doing the very first setup of logging handlers, therefore create new stderr handler,
+            # configure it and attach it to correct places
+            Logging.stderr_handler = logging.StreamHandler()
+            Logging.stderr_handler.setLevel(level)
+            Logging.stderr_handler.setFormatter(LoggingFormatter())
 
-            logger.propagate = False
-            logger.sentry_submit_warning = sentry_submit_warning
+            # create our main logger
+            Logging.logger = logging.getLogger('gluetool')
 
-            # logger actually emits everything, handlers do filtering
-            logger.setLevel(logging.VERBOSE)
-
-            # stderr handler
-            Logging.stderr_handler = handler = logging.StreamHandler()
-            handler.setLevel(level)
-            handler.setFormatter(LoggingFormatter())
-            logger.addHandler(handler)
+            # setup all loggers we're interested in
+            map(Logging.configure_logger, Logging.OUR_LOGGERS)
 
         else:
-            logger = Logging.logger
-
             # set log level to new value
             Logging.stderr_handler.setLevel(level)
 
+        # now our main logger should definitely exist and it should be usable
+        logger = Logging.get_logger()
+
         if output_file is not None:
-            # catch-everything file requested
-            handler = logging.FileHandler(output_file, 'w')
-            handler.setLevel(logging.VERBOSE)
+            # catch-everything file requested - create and configure necessary handler & formatter
+
+            Logging.output_file = output_file
+            Logging.output_file_handler = logging.FileHandler(output_file, 'w')
+            Logging.output_file_handler.setLevel(logging.VERBOSE)
 
             formatter = LoggingFormatter(colors=False, log_tracebacks=True)
             formatter.log_tracebacks = True
-            handler.setFormatter(formatter)
+            Logging.output_file_handler.setFormatter(formatter)
 
-            logger.addHandler(handler)
-
-            # Overwrites previously set output files (not our case but worth mentioning...)
-            Logging.output_file = output_file
-            Logging.output_file_handler = handler
+            # Let's make sure everything is flushed before we close the file like
+            # the good and nice program we surely are.
+            atexit.register(Logging._close_output_file)
 
             logger.debug("created output file '{}'".format(output_file))
 
-            atexit.register(Logging._close_output_file)
+            # again, add it to loggers we know about
+            map(Logging.enable_logger_debug, Logging.OUR_LOGGERS)
 
-        if sentry is not None:
-            sentry.enable_logging_breadcrumbs(logger)
+        map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS)
 
         logger.debug("logger set up: output_file='{}', level={}".format(output_file, level))
 

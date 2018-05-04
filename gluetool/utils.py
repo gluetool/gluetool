@@ -5,8 +5,10 @@ Various helpers.
 """
 
 import collections
+import contextlib
 import errno
 import functools
+import httplib
 import json
 import os
 import pipes
@@ -21,13 +23,15 @@ import warnings
 import bs4
 import urlnorm
 import jinja2
+import requests as original_requests
 
 # Don't know why pylint reports "Relative import 'ruamel.yaml', should be 'gluetool.ruamel.yaml'" :(
 # pylint: disable=relative-import
 import ruamel.yaml
 
 from gluetool import GlueError, SoftGlueError, GlueCommandError
-from gluetool.log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict
+from gluetool.log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict, print_wrapper, \
+    PackageAdapter
 
 
 YAML = ruamel.yaml.YAML()
@@ -639,6 +643,7 @@ def format_command_line(cmdline):
     return ' \\\n'.join(cmd)
 
 
+@deprecated
 def fetch_url(url, logger=None, success_codes=(200,)):
     """
     "Get me content of this URL" helper.
@@ -671,6 +676,82 @@ def fetch_url(url, logger=None, success_codes=(200,)):
         raise GlueError("Unsuccessfull response from '{}'".format(url))
 
     return response, content
+
+
+@contextlib.contextmanager
+def requests(logger=None):
+    """
+    Wrap :py:mod:`requests` with few layers providing us with the logging and better insight into
+    what has been happening when ``requests`` did their job.
+
+    Used as a context manager, yields a patched ``requests`` module. As long as inside the context,
+    detailed information about HTTP traffic are logged via given logger.
+
+    .. note::
+
+       The original ``requests`` library is returned, with slight modifications for better integration
+       with ``gluetool`` logging facilities. Each and every ``requests`` API feature is available
+       and , hopefully, enhancements applied by this wrapper wouldn't interact with ``requests``
+       functionality.
+
+    .. code-block:: python
+
+       with gluetool.utils.requests() as R:
+           R.get(...).json()
+           ...
+
+           r = R.post(...)
+           assert r.code == 404
+           ...
+
+    :param logger: used for logging.
+    :returns: :py:mod:`requests` module.
+    """
+
+    # Enable httplib debugging. It's being used underneath ``requests`` and ``urllib3``,
+    # but it's stupid - uses "print" instead of a logger, therefore we have to capture it
+    # and disable debug logging when leaving the context.
+    logger = logger or Logging.get_logger()
+    httplib_logger = PackageAdapter(logger, 'httplib')
+
+    httplib.HTTPConnection.debuglevel = 1
+
+    # Start capturing ``print`` statements - they are used to provide debug messages, therefore
+    # using ``debug`` level.
+    with print_wrapper(log_fn=httplib_logger.debug):
+        # To log responses and their content, we must take a look at ``Response`` instance
+        # returned by several entry methods (``get``, ``post``, ...). To do that, we have
+        # a simple wrapper function.
+
+        # ``original_method`` is the actual ``requests.foo`` (``get``, ``post``, ...), wrapper
+        # calls it to do the job, and logs response when it's done.
+        def _verbose_request(original_method, *args, **kwargs):
+            ret = original_method(*args, **kwargs)
+
+            log_blob(logger.debug, 'response content', ret.text)
+
+            return ret
+
+        # gather the original methods...
+        methods = {
+            method_name: getattr(original_requests, method_name)
+            for method_name in ('head', 'get', 'post', 'put', 'patch', 'delete')
+        }
+
+        # ... and replace them with our wrapper, giving it the original method as the first argument
+        for method_name, original_method in methods.iteritems():
+            setattr(original_requests, method_name, functools.partial(_verbose_request, original_method))
+
+        try:
+            yield original_requests
+
+        finally:
+            # put original methods back...
+            for method_name, original_method in methods.iteritems():
+                setattr(original_requests, method_name, original_method)
+
+            # ... and disable httplib debugging
+            httplib.HTTPConnection.debuglevel = 0
 
 
 def treat_url(url, logger=None):
