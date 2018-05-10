@@ -1528,7 +1528,7 @@ class Glue(Configurable):
                 # In case ``add_shared`` crashes, the exception is not lost since it's already
                 # captured as ``exc``, and it will be correctly added to a chain.
                 module.add_shared()
-                raise exc
+                raise exc.__class__, exc, sys.exc_info()[2]
 
             else:
                 module.add_shared()
