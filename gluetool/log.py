@@ -39,10 +39,12 @@ Example usage:
 
 import atexit
 import contextlib
+import hashlib
 import json
 import logging
 import os
 import sys
+import time
 import traceback
 
 import jinja2
@@ -56,16 +58,34 @@ BLOB_FOOTER = '---^---^---^---^---^---'
 # Default log level is logging.INFO or logging.DEBUG if GLUETOOL_DEBUG environment variable is set
 DEFAULT_LOG_LEVEL = logging.DEBUG if os.getenv('GLUETOOL_DEBUG') else logging.INFO
 
-# Add our custom "verbose" loglevel - it's even bellow DEBUG
+# Add our custom "verbose" loglevel - it's even bellow DEBUG, and it *will* be lost unless
+# gluetool's told to store it into a file. It's goal is to capture very verbose log records,
+# e.g. raw output of commands or API responses.
 logging.VERBOSE = 5
 logging.addLevelName(logging.VERBOSE, 'VERBOSE')
 
 
 # Methods we "patch" logging.Logger and logging.LoggerAdapter with
 def verbose_logger(self, message, *args, **kwargs):
-    if self.isEnabledFor(logging.VERBOSE):
-        # pylint: disable-msg=protected-access
-        self._log(logging.VERBOSE, message, args, **kwargs)
+    if not self.isEnabledFor(logging.VERBOSE):
+        return
+
+    # When we are expected to emit record of VERBOSE level, make a DEBUG note
+    # as well, to "link" debug and verbose outputs. With this, one might read
+    # DEBUG log, and use this reference to find corresponding VERBOSE record.
+    # Adding time.time() as a salt - tag is based on message hash, it may be
+    # logged multiple times, leading to the same tag.
+    tag = hashlib.md5('{}: {}'.format(time.time(), message)).hexdigest()
+
+    # add verbose tag as a context, with very high priority
+    if 'extra' not in kwargs:
+        kwargs['extra'] = {}
+
+    kwargs['extra']['ctx_verbose_tag'] = (1000, 'VERBOSE {}'.format(tag))
+
+    # pylint: disable-msg=protected-access
+    self._log(logging.DEBUG, 'See "verbose" log for the actual message', args, **kwargs)
+    self._log(logging.VERBOSE, message, args, **kwargs)
 
 
 def verbose_adapter(self, message, *args, **kwargs):
@@ -335,6 +355,19 @@ def log_xml(writer, intro, element):
     writer("{}:\n{}".format(intro, format_xml(element)))
 
 
+class SingleLogLevelFileHandler(logging.FileHandler):
+    def __init__(self, level, *args, **kwargs):
+        super(SingleLogLevelFileHandler, self).__init__(*args, **kwargs)
+
+        self.level = level
+
+    def emit(self, record, *args, **kwargs):
+        if not record.levelno == self.level:
+            return
+
+        super(SingleLogLevelFileHandler, self).emit(record, *args, **kwargs)
+
+
 class ContextAdapter(logging.LoggerAdapter):
     """
     Generic logger adapter that collects "contexts", and prepends them
@@ -548,27 +581,6 @@ class Logging(object):
     #: Stream handler printing out to stderr.
     stderr_handler = None
 
-    #: If enabled, handles output to catch-everything file.
-    output_file = None
-    output_file_handler = None
-
-    @staticmethod
-    def _close_output_file():
-        """
-        If opened, close output file used for logging.
-
-        This method is registered with :py:mod:`atexit`.
-        """
-
-        if Logging.output_file_handler is None:
-            return
-
-        Logging.get_logger().debug("closing output file '{}'".format(Logging.output_file))
-
-        Logging.output_file_handler.flush()
-        Logging.output_file_handler.close()
-        Logging.output_file_handler = None
-
     @staticmethod
     def get_logger():
         """
@@ -633,7 +645,38 @@ class Logging(object):
     )
 
     @staticmethod
-    def create_logger(output_file=None, level=DEFAULT_LOG_LEVEL, sentry=None, sentry_submit_warning=None):
+    def _setup_log_file(logger, filepath, level, limit_level=False):
+        if filepath is None:
+            return
+
+        if limit_level:
+            handler = SingleLogLevelFileHandler(level, filepath, 'w')
+
+        else:
+            handler = logging.FileHandler(filepath, 'w')
+
+        handler.setLevel(level)
+
+        formatter = LoggingFormatter(colors=False, log_tracebacks=True)
+        handler.setFormatter(formatter)
+
+        logger.addHandler(handler)
+
+        def _close_log_file():
+            Logging.get_logger().debug("closing output file '{}'".format(filepath))
+
+            handler.flush()
+            handler.close()
+
+        atexit.register(_close_log_file)
+
+        logger.debug("created output file '{}'".format(filepath))
+
+
+    @staticmethod
+    def create_logger(level=DEFAULT_LOG_LEVEL,
+                      debug_file=None, verbose_file=None,
+                      sentry=None, sentry_submit_warning=None):
         """
         Create and setup logger.
 
@@ -645,8 +688,10 @@ class Logging(object):
             log level, whether it's expected to stream debugging messages into a file, etc. This
             time, method only modifies propagates necessary updates to already existing logger.
 
-        :param str output_file: if set, new handler will be attached to the logger, streaming
-            messages of **all** log levels into this this file.
+        :param str debug_file: if set, new handler will be attached to the logger, streaming
+            messages of at least ``DEBUG`` level into this this file.
+        :param str verbose_file: if set, new handler will be attached to the logger, streaming
+            messages of ``VERBOSE`` log levels into this this file.
         :param int level: desired log level. One of constants defined in :py:mod:`logging` module,
             e.g. :py:data:`logging.DEBUG` or :py:data:`logging.ERROR`.
         :param bool sentry: if set, logger will be augmented to send every log message to the Sentry
@@ -683,28 +728,18 @@ class Logging(object):
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
 
-        if output_file is not None:
-            # catch-everything file requested - create and configure necessary handler & formatter
-
-            Logging.output_file = output_file
-            Logging.output_file_handler = logging.FileHandler(output_file, 'w')
-            Logging.output_file_handler.setLevel(logging.VERBOSE)
-
-            formatter = LoggingFormatter(colors=False, log_tracebacks=True)
-            formatter.log_tracebacks = True
-            Logging.output_file_handler.setFormatter(formatter)
-
-            # Let's make sure everything is flushed before we close the file like
-            # the good and nice program we surely are.
-            atexit.register(Logging._close_output_file)
-
-            logger.debug("created output file '{}'".format(output_file))
-
-            # again, add it to loggers we know about
-            map(Logging.enable_logger_debug, Logging.OUR_LOGGERS)
-
         map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS)
 
-        logger.debug("logger set up: output_file='{}', level={}".format(output_file, level))
+        # set log level to new value
+        Logging.stderr_handler.setLevel(level)
 
-        return logger
+        Logging._setup_log_file(Logging.logger, debug_file, logging.DEBUG)
+        Logging._setup_log_file(Logging.logger, verbose_file, logging.VERBOSE, limit_level=True)
+
+        if sentry is not None:
+            sentry.enable_logging_breadcrumbs(Logging.logger)
+
+        Logging.logger.debug("logger set up: level={}, debug file={}, verbose file={}".format(level, debug_file,
+                                                                                              verbose_file))
+
+        return Logging.logger

@@ -276,7 +276,10 @@ class Configurable(object):
       add any leading dashes (``-`` nor ``--``):
 
       * ``<long name>``
-      * ``tuple(<short name>, <long name>)``
+      * ``tuple(<short name>, <long name #1>, <long name #2>, ...)``
+
+    * the first of long names (``long name #1``) is used to identify the option - other long names
+      are understood by argument parser but their values are stored under ``long name #1`` option.
 
     * dictionary ``<option properties>`` is passed to :py:meth:`argparse.ArgumentParser.add_argument` as
       keyword arguments when the option is being added to the parser, therefore any arguments recognized
@@ -462,7 +465,7 @@ class Configurable(object):
                     final_names = ('--{}'.format(name),)
 
                 else:
-                    final_names = ('-{}'.format(names[0]), '--{}'.format(names[1]))
+                    final_names = ('-{}'.format(names[0]),) + tuple(['--{}'.format(n) for n in names[1:]])
 
             parser.add_argument(*final_names, **params)
 
@@ -918,15 +921,19 @@ class Glue(Configurable):
                 'action': 'store_true'
             },
             ('d', 'debug'): {
-                'help': 'Raise terminal output verbosity to DEBUG (the most verbose)',
+                'help': 'Log debugging messages to the terminal (WARNING: very verbose!).',
                 'action': 'store_true'
             },
             ('i', 'info'): {
                 'help': 'Print command-line that would re-run the gluetool session',
                 'action': 'store_true'
             },
-            ('o', 'output'): {
-                'help': 'Output *everything* to given file, with highest verbosity enabled'
+            ('o', 'debug-file', 'output'): {
+                'help': 'Log messages with at least ``DEBUG`` level are sent to this file.'
+            },
+            'verbose-file': {
+                'help': 'Log messages with ``VERBOSE`` level sent to this file.',
+                'default': None
             },
             ('p', 'pid'): {
                 'help': 'Log PID of gluetool process',
@@ -937,7 +944,7 @@ class Glue(Configurable):
                 'action': 'store_true'
             },
             ('v', 'verbose'): {
-                'help': 'Raise terminal output verbosity to VERBOSE (one step below DEBUG)',
+                'help': 'Log **all** messages to the terminal (WARNING: even more verbose than ``-d``!).',
                 'action': 'store_true'
             }
         }),
@@ -1136,7 +1143,7 @@ class Glue(Configurable):
             # cache the context for logging
             module_context = module.eval_context
 
-            log_dict(module.debug, 'eval context', module_context)
+            log_dict(module.verbose, 'eval context', module_context)
 
             context.update(module_context)
 
@@ -1406,15 +1413,17 @@ class Glue(Configurable):
                          formatter_class=LineWrapRawTextHelpFormatter)
 
         # re-create logger - now we have all necessary configuration
-        level = logging.INFO
-        if self.option('debug') or self.option('verbose'):
+        if self.option('verbose'):
             level = logging.VERBOSE
 
-            if not self.option('verbose'):
-                level = logging.DEBUG
+        elif self.option('debug'):
+            level = logging.DEBUG
 
         elif self.option('quiet'):
             level = logging.WARNING
+
+        else:
+            level = logging.INFO
 
         import gluetool.color
         import gluetool.utils
@@ -1422,11 +1431,24 @@ class Glue(Configurable):
         # enable global color support
         gluetool.color.switch(gluetool.utils.normalize_bool_option(self.option('colors')))
 
-        logger = Logging.create_logger(output_file=self.option('output'), level=level,
+        debug_file = self.option('debug-file')
+        verbose_file = self.option('verbose-file')
+
+        if debug_file and not verbose_file:
+            verbose_file =  '{}.verbose'.format(debug_file)
+
+        logger = Logging.create_logger(level=level,
+                                       debug_file=debug_file,
+                                       verbose_file=verbose_file,
                                        sentry=self._sentry)
 
         self.logger = ContextAdapter(logger)
         self.logger.connect(self)
+
+        if level == logging.DEBUG and not verbose_file:
+            # pylint: disable=line-too-long
+            self.warn('Debug output enabled but no verbose destination set.')
+            self.warn('Either use ``-v`` to display verbose messages on screen, or ``--verbose-file`` to store them in a file.')
 
         if self.option('isolated-run'):
             self._dryrun_level = DryRunLevels.ISOLATED
@@ -1449,7 +1471,7 @@ class Glue(Configurable):
             return
 
         # we will destroy modules in reverse order, which makes more sense
-        self.verbose('destroying all modules in reverse order')
+        self.debug('destroying all modules in reverse order')
 
         def _destroy(module):
             try:

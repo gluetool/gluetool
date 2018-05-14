@@ -327,15 +327,15 @@ class ProcessOutput(object):
 
         if content is None:
             if stream in self.kwargs:
-                logger('{}:\n  command produced no output'.format(stream))
+                logger.debug('{}:\n  command produced no output'.format(stream))
             else:
-                logger('{}:\n  command forwarded the output to its parent'.format(stream))
+                logger.debug('{}:\n  command forwarded the output to its parent'.format(stream))
 
         else:
-            log_blob(logger, stream, content)
+            log_blob(logger.verbose, stream, content)
 
     def log(self, logger):
-        logger('command exited with code {}'.format(self.exit_code))
+        logger.debug('command exited with code {}'.format(self.exit_code))
 
         self.log_stream('stdout', logger)
         self.log_stream('stderr', logger)
@@ -474,7 +474,7 @@ class Command(object):
     def _construct_output(self):
         output = ProcessOutput(self._command, self._exit_code, self._stdout, self._stderr, self._popen_kwargs)
 
-        output.log(self.debug)
+        output.log(self.logger)
 
         return output
 
