@@ -1525,8 +1525,10 @@ class Glue(Configurable):
 
             # pylint: disable=broad-except,unused-variable
             except Exception as exc:  # noqa
-                # In case ``add_shared`` crashes, the exception is not lost since it's already
-                # captured as ``exc``, and it will be correctly added to a chain.
+                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
+                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
+                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
+                # to a chain anyway.
                 module.add_shared()
                 raise exc.__class__, exc, sys.exc_info()[2]
 
