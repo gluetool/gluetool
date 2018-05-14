@@ -629,7 +629,7 @@ class Logging(object):
 
     OUR_LOGGERS = (
         logging.getLogger('gluetool'),
-        logging.getLogger("urllib3")
+        logging.getLogger('urllib3')
     )
 
     @staticmethod
