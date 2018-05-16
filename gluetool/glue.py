@@ -1514,8 +1514,26 @@ class Glue(Configurable):
         self._for_each_module(modules, _sanity)
 
         def _execute(module):
-            module.execute()
-            module.add_shared()
+            # We want to register module's shared function no matter how its ``execute``
+            # finished or crashed. We could use ``try``-``finally`` and call add_shared there
+            # but should there be an exception under ``try`` *and* should there be another
+            # one under ``finally``, the first one would be lost, replaced by the later.
+            # And we cannot guarantee exception-less ``add_shared``, it may have been replaced
+            # by module's developer. Therefore resorting to being more verbose.
+            try:
+                module.execute()
+
+            # pylint: disable=broad-except,unused-variable
+            except Exception as exc:  # noqa
+                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
+                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
+                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
+                # to a chain anyway.
+                module.add_shared()
+                raise exc.__class__, exc, sys.exc_info()[2]
+
+            else:
+                module.add_shared()
 
         self._for_each_module(modules, _execute)
 
