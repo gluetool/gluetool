@@ -78,7 +78,7 @@ class YAMLPipeline(gluetool.Module):
     """
 
     name = 'yaml-pipeline'
-    desc = 'Runs pipeline, described by a given YAML file.'
+    description = 'Runs pipeline, described by a given YAML file.'
 
     options = {
         'description': {

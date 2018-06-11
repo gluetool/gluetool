@@ -37,6 +37,7 @@ if __name__ == '__main__':
               'colorama==0.3.9',
               'docutils==0.14',
               'enum34==1.1.6',
+              'future==0.16.0',
               'Jinja2==2.10',
               'lxml==4.2.4',
               'mock==3.0.5',
