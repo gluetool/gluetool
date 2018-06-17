@@ -3,6 +3,8 @@ import operator
 
 from packaging.version import Version
 
+from six import iteritems
+
 import gluetool
 
 
@@ -54,7 +56,7 @@ class ModuleInfoGroup(object):
             'pip': [],
             'ansible_tasks': []
         }
-        for moduleinfo in self.items.itervalues():
+        for moduleinfo in self.items.values():
             if only_modules and moduleinfo.name not in only_modules:
                 self.logger.debug("Skip module '{}'".format(moduleinfo.name))
                 continue
@@ -88,7 +90,7 @@ class ModuleInfoGroup(object):
                 self.logger.debug(item)
                 self.limit_version(version_limit, oper, version)
         self.logger.debug(versions)
-        for _, item in versions.iteritems():
+        for _, item in iteritems(versions):
             result.append(self.get_allowed_version_bounds(item))
         return result
 
