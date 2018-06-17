@@ -3,6 +3,7 @@ codecov==2.0.15
 flake8==3.4.1
 hypothesis==3.45.4
 pylint==1.9.2
+mock==2.0.0
 pytest-pylint==0.7.1
 pytest-flake8==0.8.1
 pytest-cov==2.5.1

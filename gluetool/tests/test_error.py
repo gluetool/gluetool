@@ -14,7 +14,7 @@ def test_message(message):
     with pytest.raises(GlueError) as excinfo:
         raise GlueError(message)
 
-    assert excinfo.value.message == message
+    assert str(excinfo.value) == message
 
 
 # simulate dummy sys.exc_info values, and add the special "no exception" case,
@@ -100,7 +100,7 @@ def test_command_error(cmd, exit_code):
     assert isinstance(exc, GlueError)
     assert exc.cmd == cmd
     assert exc.output == mock_output
-    assert exc.message == "Command '{}' failed with exit code {}".format(cmd, exit_code)
+    assert str(exc) == "Command '{}' failed with exit code {}".format(cmd, exit_code)
 
 
 # Simulate module by a simple integer - it's not touched by Failure, therefore it's quite fine.

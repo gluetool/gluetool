@@ -3,7 +3,7 @@
 import pytest
 from mock import MagicMock
 
-import urlnorm
+import urlnormalizer
 
 from gluetool.utils import treat_url
 
@@ -18,17 +18,7 @@ def test_sanity(url, expected):
     assert treat_url(url) == expected
 
 
-def test_urlnorm_error(monkeypatch):
-    monkeypatch.setattr(urlnorm, 'norm', MagicMock(side_effect=urlnorm.InvalidUrl))
-
-    with pytest.raises(urlnorm.InvalidUrl):
-        treat_url('dummy url')
-
-    # pylint: disable=no-member
-    urlnorm.norm.assert_called_once_with('dummy url')
-
-
 def test_strip(monkeypatch):
-    monkeypatch.setattr(urlnorm, 'norm', MagicMock(return_value=('   so much whitespace   ')))
+    monkeypatch.setattr(urlnormalizer, 'normalize_url', MagicMock(return_value=('   so much whitespace   ')))
 
     assert treat_url('http://foo.bar.com/') == 'so much whitespace'

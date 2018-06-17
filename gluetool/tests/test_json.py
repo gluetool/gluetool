@@ -1,7 +1,8 @@
+from __future__ import print_function
+
 import json
 import re
 import string
-from __future__ import print_function
 
 import pytest
 from hypothesis import assume, given, strategies as st
