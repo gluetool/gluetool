@@ -75,7 +75,7 @@ if __name__ == '__main__':
               'License :: OSI Approved :: BSD License',
               'Operating System :: POSIX :: Linux',
               'Programming Language :: Python :: 2.7',
-              'Programming Language :: Python :: 3',
+              'Programming Language :: Python :: 3.6',
               'Programming Language :: Python :: Implementation :: CPython',
               'Topic :: Software Development :: Libraries :: Application Frameworks',
               'Topic :: Utilities'

@@ -20,7 +20,7 @@ import threading
 import time
 import warnings
 
-from six import iteritems
+from six import iteritems, string_types
 from six.moves import urllib
 import bs4
 import urlnormalizer
@@ -181,7 +181,7 @@ def normalize_multistring_option(option_value, separator=','):
     # If the value is string, convert it to list - it comes from a config file,
     # command-line parsing always produces a list. This reduces config file values
     # to the same structure command-line produces.
-    values = [option_value] if isinstance(option_value, str) else option_value
+    values = [option_value] if isinstance(option_value, string_types) else option_value
 
     # Now deal with possibly multiple paths, separated by comma and some white space, inside
     # every item of the list. Split the paths in the item by the given separator, strip the
@@ -615,7 +615,7 @@ class Command(LoggerMixin, object):
             if not isinstance(items, list):
                 raise GlueError('Only list of strings is accepted')
 
-            if not all((isinstance(s, str) for s in items)):
+            if not all((isinstance(s, string_types) for s in items)):
                 raise GlueError('Only list of strings is accepted, {} found'.format([(s, type(s)) for s in items]))
 
         _check_types(self.executable)
@@ -907,7 +907,7 @@ def treat_url(url, logger=None):
     :param str url: URL to clear.
     :param gluetool.log.ContextAdapter logger: logger to use for logging.
     :rtype: str
-    :raises: gluetool.glue.GlueErrorL: if URL is invalid
+    :raises: gluetool.glue.GlueError: if URL is invalid
     :returns: Treated URL.
     """
 
@@ -1067,7 +1067,7 @@ def _json_byteify(data, ignore_dicts=False):
     # type: (Any, Optional[bool]) -> Any
 
     # if this is a unicode string, return its string representation
-    if isinstance(data, str):
+    if isinstance(data, string_types):
         return data.encode('utf-8')
 
     # if this is a list of values, return list of byteified values
@@ -1403,7 +1403,7 @@ class PatternMap(LoggerMixin, object):
                      "rendered mapping '{}'".format(pattern),
                      converter_chains)
 
-            if isinstance(converter_chains, str):
+            if isinstance(converter_chains, string_types):
                 converter_chains = [converter_chains]
 
             try:

@@ -11,7 +11,11 @@ import warnings
 import ast
 
 from functools import partial
+<<<<<<< HEAD
 
+=======
+from six import iterkeys, iteritems, reraise
+>>>>>>> Fixed additional comments from @happz
 from six.moves import configparser
 from six import iteritems, reraise
 
@@ -935,7 +939,7 @@ class Configurable(LoggerMixin, object):
 
         # Sort options by their names - no code has a strong option on their order, so force
         # one to all users of this helper.
-        option_names = sorted(list(options.keys()), key=lambda x: x[1] if isinstance(x, tuple) else x)
+        option_names = sorted(iterkeys(options), key=lambda x: x[1] if isinstance(x, tuple) else x)
 
         for names in option_names:
             params = options[names]
