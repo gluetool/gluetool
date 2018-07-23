@@ -2,6 +2,8 @@
 
 import argparse
 import collections
+import ast
+import enum
 import imp
 import inspect
 import logging
@@ -11,15 +13,10 @@ import warnings
 import ast
 
 from functools import partial
-<<<<<<< HEAD
 
-=======
-from six import iterkeys, iteritems, reraise
->>>>>>> Fixed additional comments from @happz
+from six import iterkeys, iteritems, reraise, string_types
 from six.moves import configparser
-from six import iteritems, reraise
 
-import enum
 import jinja2
 import mock
 import pkg_resources
@@ -1055,7 +1052,7 @@ class Configurable(LoggerMixin, object):
 
                 except ValueError as exc:
                     raise GlueError("Value of option '{}' expected to be '{}' but cannot be parsed: '{}'".format(
-                        name, params['type'].__name__, exc.message))
+                        name, params['type'].__name__, string_types(exc)))
 
             self._config[name] = value
             self.debug("Option '{}' set to '{}' by config file".format(name, value))  # pylint: disable=not-callable
@@ -2503,54 +2500,8 @@ class Glue(Configurable):
 
         self.pipelines.append(pipeline)
 
-<<<<<<< HEAD
         try:
             return pipeline.run()
-=======
-        log_dict(self.debug, 'running a pipeline', pipeline_desc)
-
-        modules = []
-
-        for step in pipeline_desc:
-            module = self.init_module(step.module, actual_module_name=step.actual_module)
-            modules.append(module)
-
-            if register is True:
-                self._module_instances.append(module)
-
-            module.parse_config()
-            module.parse_args(step.argv)
-            module.check_dryrun()
-
-        def _sanity(module):
-            # type: (Module) -> None
-
-            module.sanity()
-            module.check_required_options()
-
-        self._for_each_module(modules, _sanity)
-
-        def _execute(module):
-            # type: (Module) -> None
-
-            # We want to register module's shared function no matter how its ``execute``
-            # finished or crashed. We could use ``try``-``finally`` and call add_shared there
-            # but should there be an exception under ``try`` *and* should there be another
-            # one under ``finally``, the first one would be lost, replaced by the later.
-            # And we cannot guarantee exception-less ``add_shared``, it may have been replaced
-            # by module's developer. Therefore resorting to being more verbose.
-            try:
-                module.execute()
-
-            # pylint: disable=broad-except,unused-variable
-            except Exception as exc:  # noqa
-                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
-                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
-                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
-                # to a chain anyway.
-                module.add_shared()
-                reraise(exc.__class__, exc, sys.exc_info()[2])
->>>>>>> Fix exceptions
 
         finally:
             self.pipelines.pop(-1)

@@ -68,10 +68,7 @@ def switch(enabled):
         # pylint: disable=cyclic-import
         from .log import Logging
 
-        logger = Logging.get_logger()
-        assert logger is not None
-
-        logger.warn("Unable to turn on colorized terminal messages, please install 'colorama' package")
+        Logging.get_logger().warning("Unable to turn on colorized terminal messages, please install 'colorama' package")
         return
 
     Colors.style = staticmethod(_style_colors if enabled else _style_plain)  # type: ignore  # types are compatible

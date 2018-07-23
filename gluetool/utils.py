@@ -8,7 +8,6 @@ import collections
 import contextlib
 import errno
 import functools
-import httplib
 import json
 import os
 import pipes
@@ -20,8 +19,8 @@ import threading
 import time
 import warnings
 
-from six import iteritems, string_types
-from six.moves import urllib
+from six import PY2, iterkeys, iteritems, string_types
+from six.moves import http_client, urllib
 import bs4
 import urlnormalizer
 import jinja2
@@ -846,18 +845,17 @@ def requests(logger=None):
     :returns: :py:mod:`requests` module.
     """
 
-    # Enable httplib debugging. It's being used underneath ``requests`` and ``urllib3``,
+    # Enable http_client debugging. It's being used underneath ``requests`` and ``urllib3``,
     # but it's stupid - uses "print" instead of a logger, therefore we have to capture it
     # and disable debug logging when leaving the context.
     logger = logger or Logging.get_logger()
 
-    httplib_logger = PackageAdapter(logger, 'httplib')
-
-    httplib.HTTPConnection.debuglevel = 1
+    http_client_logger = PackageAdapter(logger, 'httplib') if PY2 else PackageAdapter(logger, 'http_client')
+    http_client.HTTPConnection.debuglevel = 1
 
     # Start capturing ``print`` statements - they are used to provide debug messages, therefore
     # using ``debug`` level.
-    with print_wrapper(log_fn=httplib_logger.debug):
+    with print_wrapper(log_fn=http_client_logger.debug):  # type: ignore  # logger.debug signature is compatible
         # To log responses and their content, we must take a look at ``Response`` instance
         # returned by several entry methods (``get``, ``post``, ...). To do that, we have
         # a simple wrapper function.
@@ -894,8 +892,8 @@ def requests(logger=None):
             for method_name, original_method in methods.iteritems():
                 setattr(original_requests, method_name, original_method)
 
-            # ... and disable httplib debugging
-            httplib.HTTPConnection.debuglevel = 0
+            # ... and disable http_client debugging
+            http_client.HTTPConnection.debuglevel = 0
 
 
 def treat_url(url, logger=None):

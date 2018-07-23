@@ -5,9 +5,9 @@ Proxying object wrapper.
 # Proxy class comes from the AS recipe
 # http://code.activestate.com/recipes/496741-object-proxying/
 
-import six
-
 from builtins import object
+
+import six
 
 
 class Proxy(object):

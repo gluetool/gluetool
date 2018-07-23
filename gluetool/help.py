@@ -12,7 +12,6 @@ import argparse
 import ast
 import inspect
 import os
-import sys
 import textwrap
 
 from functools import partial
@@ -22,11 +21,11 @@ import docutils.nodes
 import docutils.parsers.rst
 import docutils.writers
 import jinja2
-import six
 import sphinx.writers.text
 import sphinx.locale
 import sphinx.util.nodes
 
+import six
 from six import iteritems
 
 from .color import Colors
@@ -91,6 +90,7 @@ def C_LITERAL(text):
 _original_TextTranslator = sphinx.writers.text.TextTranslator
 
 
+# ##pylint: disable=abstract-method
 class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no type info in TextTranslator
     # literals, ``foo``
     def visit_literal(self, node):
@@ -217,7 +217,7 @@ def rst_to_text(text):
     text = cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
 
     # in Python3 the publish_string returns bytes, convert it to string
-    if isinstance(text, bytes):
+    if six.PY3:
         return str(text, 'utf-8')
 
     return text
@@ -345,7 +345,13 @@ def function_help(func, name=None):
     name = name or func.__name__
 
     # construct function signature
-    signature = inspect.getargspec(func)
+    # with Python 3 use getfullargspec instead of getargspec
+    if six.PY2:
+        # pylint: disable=deprecated-method
+        signature = inspect.getargspec(func)
+    else:
+        signature = inspect.getfullargspec(func)  # pylint: disable=no-member
+
     no_default = object()
 
     defaults = []  # type: List[Union[str, object]]
@@ -494,7 +500,7 @@ def extract_eval_context_info(source, logger=None):
 
     # pylint: disable=broad-except
     except Exception as exc:
-        logger.warn("Cannot read eval context info from '{}': {}".format(source.name, exc))
+        logger.warning("Cannot read eval context info from '{}': {}".format(source.name, exc))
 
         return {}
 

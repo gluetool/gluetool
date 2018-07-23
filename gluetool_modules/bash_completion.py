@@ -1,6 +1,10 @@
+from __future__ import print_function
+
 import collections
 
 import jinja2
+
+from six import iteritems
 
 import gluetool
 import gluetool.utils
@@ -26,7 +30,7 @@ _{{ GLUE.tool._command_name }}()
     done
 
     modules="{{ GLUE.modules.keys() | sort | join(' ') }}"
-    {% for module_name, module_options in MODULE_OPTIONS.iteritems() | sort %}
+    {% for module_name, module_options in MODULE_OPTIONS.items() | sort %}
     {{ module_name | replace('-', '_') }}_opts="{{ module_options | sort | join(' ') }}"
     {%- endfor %}
 
@@ -98,7 +102,7 @@ class BashCompletion(gluetool.Module):
         # add -h and --help to every module - these are added by argparse code to the generated
         # help, here we have to do it on our own
         module_options = {
-            name: options + ['-h', '--help'] for name, options in module_options.iteritems()
+            name: options + ['-h', '--help'] for name, options in iteritems(module_options)
         }
 
-        print jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue, MODULE_OPTIONS=module_options)
+        print(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue, MODULE_OPTIONS=module_options))

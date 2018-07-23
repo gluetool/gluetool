@@ -172,7 +172,7 @@ class Gluetool(object):
         logging.basicConfig(level=logging.DEBUG)
         logger = logging.getLogger()
 
-        logger.warn('Cannot use custom logger, falling back to a default one')
+        logger.warning('Cannot use custom logger, falling back to a default one')
 
         return logger
 
@@ -261,6 +261,7 @@ class Gluetool(object):
                 # tripple error \o/
 
                 print(file=sys.stderr)
+                # pylint: disable=line-too-long
                 print('!!! While submitting an exception to the Sentry, another exception appeared !!!', file=sys.stderr)
                 print(sys.stderr, '    Giving up on everything...', file=sys.stderr)
                 print(sys.stderr, file=sys.stderr)
