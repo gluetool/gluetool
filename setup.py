@@ -34,6 +34,8 @@ if __name__ == '__main__':
               'lxml==3.7.3',
               'packaging==16.8',
               'raven==6.0.0',
+              'requests==2.18.4',
+              'requests-toolbelt==0.8.0',
               'ruamel.yaml==0.15.34',
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.1.9',
