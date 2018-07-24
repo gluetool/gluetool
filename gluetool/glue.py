@@ -563,19 +563,23 @@ class Configurable(object):
             if name not in self._config or not self._config[name]:
                 raise GlueError("Missing required '{}' option".format(name))
 
-    def option(self, name):
+    def option(self, *names):
         """
-        Return a value of given option from module's configuration store.
+        Return values of given options from module's configuration store.
 
-        :param str name: name of requested option.
-        :returns: option value or ``None`` when no such option exists.
+        :param str names: names of requested options.
+        :returns: either a value or ``None`` if such option does not exist. When multiple options are requested,
+            a tuple of their values is returned, for a single option its value is **not** wrapped by a tuple.
         """
 
-        try:
-            return self._config[name]
+        if not names:
+            raise GlueError('Specify at least one option')
 
-        except KeyError:
-            return None
+        values = tuple(
+            self._config.get(name, None) for name in names
+        )
+
+        return values[0] if len(values) == 1 else values
 
     @property
     def dryrun_level(self):
