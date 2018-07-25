@@ -361,11 +361,11 @@ class SingleLogLevelFileHandler(logging.FileHandler):
 
         self.level = level
 
-    def emit(self, record, *args, **kwargs):
+    def emit(self, record):
         if not record.levelno == self.level:
             return
 
-        super(SingleLogLevelFileHandler, self).emit(record, *args, **kwargs)
+        super(SingleLogLevelFileHandler, self).emit(record)
 
 
 class ContextAdapter(logging.LoggerAdapter):
@@ -671,7 +671,6 @@ class Logging(object):
         atexit.register(_close_log_file)
 
         logger.debug("created output file '{}'".format(filepath))
-
 
     @staticmethod
     def create_logger(level=DEFAULT_LOG_LEVEL,

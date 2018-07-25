@@ -1435,7 +1435,7 @@ class Glue(Configurable):
         verbose_file = self.option('verbose-file')
 
         if debug_file and not verbose_file:
-            verbose_file =  '{}.verbose'.format(debug_file)
+            verbose_file = '{}.verbose'.format(debug_file)
 
         logger = Logging.create_logger(level=level,
                                        debug_file=debug_file,

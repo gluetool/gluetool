@@ -41,7 +41,7 @@ def test_invalid_cmd():
         Command(['/bin/ls', 13]).run()
 
 
-def _assert_logging(log, record_count, cmd, stdout=None, stderr=None, stdout_index=4, stderr_index=5):
+def _assert_logging(log, record_count, cmd, stdout=None, stderr=None, stdout_index=4, stderr_index=6):
     # pylint: disable=too-many-arguments
 
     assert len(log.records) == record_count
@@ -50,10 +50,18 @@ def _assert_logging(log, record_count, cmd, stdout=None, stderr=None, stdout_ind
     assert log.records[0].message == 'command:\n{}'.format(format_dict(cmd))
 
     if stdout is not None:
-        assert log.records[stdout_index].message == stdout
+        assert False
 
     if stderr is not None:
-        assert log.records[stderr_index].message == stderr
+        assert False
+
+
+def _assert_output(log, index, verbose_note=True, content=None):
+    if verbose_note:
+        assert log.records[index].message == 'See "verbose" log for the actual message'
+        index += 1
+
+    assert log.records[index].message == content
 
 
 def test_sanity(popen, log):
@@ -71,9 +79,9 @@ def test_sanity(popen, log):
     assert output.stderr == ''
     popen.assert_called_once_with(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    _assert_logging(log, 6, command,
-                    stdout='stdout:\n---v---v---v---v---v---\nroot listing\n---^---^---^---^---^---',
-                    stderr='stderr:\n---v---v---v---v---v---\n\n---^---^---^---^---^---')
+    _assert_logging(log, 8, command)
+    _assert_output(log, 4, content='stdout:\n---v---v---v---v---v---\nroot listing\n---^---^---^---^---^---')
+    _assert_output(log, 6, content='stderr:\n---v---v---v---v---v---\n\n---^---^---^---^---^---')
 
 
 @pytest.mark.parametrize('actual_errno, expected_exc, expected_message', [
@@ -112,9 +120,9 @@ def test_exit_code_error(popen, log):
             as excinfo:
         Command(command).run()
 
-    _assert_logging(log, 6, command,
-                    stdout='stdout:\n  command produced no output',
-                    stderr='stderr:\n  command produced no output')
+    _assert_logging(log, 6, command)
+    _assert_output(log, 4, content='stdout:\n  command produced no output', verbose_note=False)
+    _assert_output(log, 5, content='stderr:\n  command produced no output', verbose_note=False)
 
     assert excinfo.value.output.exit_code == 1
     assert excinfo.value.output.stdout is None
@@ -139,37 +147,91 @@ def test_std_streams_mix(popen, log):
     assert output.stdout == 'This goes to stdout\n'
     assert output.stderr == 'This goes to stderr\n'
 
-    _assert_logging(log, 6, command,
-                    stdout='stdout:\n---v---v---v---v---v---\nThis goes to stdout\n\n---^---^---^---^---^---',
-                    stderr='stderr:\n---v---v---v---v---v---\nThis goes to stderr\n\n---^---^---^---^---^---')
+    _assert_logging(log, 8, command)
+    _assert_output(log, 4, content='stdout:\n---v---v---v---v---v---\nThis goes to stdout\n\n---^---^---^---^---^---')
+    _assert_output(log, 6, content='stderr:\n---v---v---v---v---v---\nThis goes to stderr\n\n---^---^---^---^---^---')
 
 
 @pytest.mark.parametrize('actual_comm, stdout, stderr', [
-    # pylint: disable=line-too-long
-    ((None, 'This goes to stderr\n'), (gluetool.utils.DEVNULL, 'DEVNULL', None), (subprocess.PIPE, 'PIPE', 'This goes to stderr\n')),  # Ignore PEP8Bear
-    (('This goes to stdout\n', None), (subprocess.PIPE, 'PIPE', 'This goes to stdout\n'), (gluetool.utils.DEVNULL, 'DEVNULL', None)),  # Ignore PEP8Bear
-    (('This goes to stdout\nThis goes to stderr\n', None), (subprocess.PIPE, 'PIPE', 'This goes to stdout\nThis goes to stderr\n'), (subprocess.STDOUT, 'STDOUT', None))  # Ignore PEP8Bear
+    (
+        (
+            None,
+            'This goes to stderr\n'
+        ),
+        (
+            gluetool.utils.DEVNULL,
+            None
+        ),
+        (
+            subprocess.PIPE,
+            'This goes to stderr\n'
+        )
+    ),
+    (
+        (
+            'This goes to stdout\n',
+            None
+        ),
+        (
+            subprocess.PIPE,
+            'This goes to stdout\n'
+        ),
+        (
+            gluetool.utils.DEVNULL,
+            None
+        )
+    ),
+    (
+        (
+            'This goes to stdout\nThis goes to stderr\n',
+            None
+        ),
+        (
+            subprocess.PIPE,
+            'This goes to stdout\nThis goes to stderr\n'
+        ),
+        (
+            subprocess.STDOUT, None
+        )
+    )
 ])
 def test_forwarding(popen, log, actual_comm, stdout, stderr):
+    stdout_arg, stdout_output = stdout
+    stderr_arg, stderr_output = stderr
+
     popen.return_value.communicate.return_value = actual_comm
 
     command = ['/bin/foo']
 
-    output = Command(command).run(stdout=stdout[0], stderr=stderr[0])
+    output = Command(command).run(stdout=stdout_arg, stderr=stderr_arg)
 
     assert output.exit_code == 0
-    assert output.stdout == stdout[2]
-    assert output.stderr == stderr[2]
+    assert output.stdout == stdout_output
+    assert output.stderr == stderr_output
 
-    popen.assert_called_once_with(command, stdout=stdout[0], stderr=stderr[0])
+    popen.assert_called_once_with(command, stdout=stdout_arg, stderr=stderr_arg)
 
-    # pylint: disable=line-too-long
-    expected_stdout = '  command produced no output' if stdout[2] is None else '---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stdout[2])  # Ignore PEP8Bear
-    expected_stderr = '  command produced no output' if stderr[2] is None else '---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stderr[2])  # Ignore PEP8Bear
+    _assert_logging(log, 7, command)
 
-    _assert_logging(log, 6, command,
-                    stdout='stdout:\n{}'.format(expected_stdout),
-                    stderr='stderr:\n{}'.format(expected_stderr))
+    index = 4
+
+    if stdout_output is None:
+        assert log.records[index].message == 'stdout:\n  command produced no output'
+
+        index += 1
+
+    else:
+        assert log.records[index].message == 'See "verbose" log for the actual message'
+        assert log.records[index + 1].message == 'stdout:\n---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stdout_output)
+
+        index += 2
+
+    if stderr_output is None:
+        assert log.records[index].message == 'stderr:\n  command produced no output'
+
+    else:
+        assert log.records[index].message == 'See "verbose" log for the actual message'
+        assert log.records[index + 1].message == 'stderr:\n---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stderr_output)
 
 
 def test_invalid_stdout(popen, log):
