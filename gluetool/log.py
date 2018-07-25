@@ -83,8 +83,32 @@ def verbose_logger(self, message, *args, **kwargs):
 
     kwargs['extra']['ctx_verbose_tag'] = (1000, 'VERBOSE {}'.format(tag))
 
+    # Verbose message should give some hint. It must contain the tag, but it could also start
+    # with a hint!
+    keep_len = 12
+
+    if len(message) <= keep_len:
+        hint = message
+
+    else:
+        new_line_index = message.index('\n')
+
+        if new_line_index == -1:
+            hint = '{}...'.format(message[0:keep_len])
+
+        elif new_line_index == keep_len:
+            hint = message
+
+        elif new_line_index < keep_len:
+            hint = message[0:new_line_index]
+
+        else:
+            hint = '{}...'.format(message[0:keep_len])
+
+    verbose_message = '{} (See "verbose" log for the actual message)'.format(hint)
+
     # pylint: disable-msg=protected-access
-    self._log(logging.DEBUG, 'See "verbose" log for the actual message', args, **kwargs)
+    self._log(logging.DEBUG, verbose_message, args, **kwargs)
     self._log(logging.VERBOSE, message, args, **kwargs)
 
 
