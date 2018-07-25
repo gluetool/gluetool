@@ -800,7 +800,7 @@ def render_template(template, logger=None, **kwargs):
     try:
         def _render(template):
             log_blob(logger.debug, 'rendering template', template.source)
-            log_dict(logger.debug, 'context', kwargs)
+            log_dict(logger.verbose, 'context', kwargs)
 
             return str(template.render(**kwargs).strip())
 
