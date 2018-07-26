@@ -605,6 +605,9 @@ class Logging(object):
     #: Stream handler printing out to stderr.
     stderr_handler = None
 
+    debug_file_handler = None
+    verbose_file_handler = None
+
     @staticmethod
     def get_logger():
         """
@@ -647,21 +650,25 @@ class Logging(object):
         logger.addHandler(Logging.stderr_handler)
 
     @staticmethod
-    def enable_logger_debug(logger):
-        """
-        When ``-o`` option is given, Gluetool opens a file which receives all logging messages produced
-        by loggers governed by Gluetool. This method configures a given logger to follow the same rules,
-        all its messages will be captured in this file as well.
-        """
-
-        logger.addHandler(Logging.output_file_handler)
-
-    @staticmethod
     def enable_logger_sentry(logger):
         if not Logging.sentry:
             return
 
         Logging.sentry.enable_logging_breadcrumbs(logger)
+
+    @staticmethod
+    def enable_debug_file(logger):
+        if not Logging.debug_file_handler:
+            return
+
+        logger.addHandler(Logging.debug_file_handler)
+
+    @staticmethod
+    def enable_verbose_file(logger):
+        if not Logging.verbose_file_handler:
+            return
+
+        logger.addHandler(Logging.verbose_file_handler)
 
     OUR_LOGGERS = (
         logging.getLogger('gluetool'),
@@ -669,9 +676,9 @@ class Logging(object):
     )
 
     @staticmethod
-    def _setup_log_file(logger, filepath, level, limit_level=False):
+    def _setup_log_file(filepath, level, limit_level=False):
         if filepath is None:
-            return
+            return None
 
         if limit_level:
             handler = SingleLogLevelFileHandler(level, filepath, 'w')
@@ -684,8 +691,6 @@ class Logging(object):
         formatter = LoggingFormatter(colors=False, log_tracebacks=True)
         handler.setFormatter(formatter)
 
-        logger.addHandler(handler)
-
         def _close_log_file():
             Logging.get_logger().debug("closing output file '{}'".format(filepath))
 
@@ -694,7 +699,9 @@ class Logging(object):
 
         atexit.register(_close_log_file)
 
-        logger.debug("created output file '{}'".format(filepath))
+        Logging.get_logger().debug("created output file '{}'".format(filepath))
+
+        return handler
 
     @staticmethod
     def create_logger(level=DEFAULT_LOG_LEVEL,
@@ -744,25 +751,28 @@ class Logging(object):
             # setup all loggers we're interested in
             map(Logging.configure_logger, Logging.OUR_LOGGERS)
 
-        else:
-            # set log level to new value
-            Logging.stderr_handler.setLevel(level)
+        # set log level to new value
+        Logging.stderr_handler.setLevel(level)
+
+        # create debug and verbose files
+        Logging.debug_file_handler = Logging._setup_log_file(debug_file, logging.DEBUG)
+        Logging.verbose_file_handler = Logging._setup_log_file(verbose_file, logging.VERBOSE, limit_level=True)
 
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
 
+        # Enable Sentry
+        Logging.enable_logger_sentry(logger)
+
         map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS)
 
-        # set log level to new value
-        Logging.stderr_handler.setLevel(level)
+        # Enable debug and verbose files
+        Logging.enable_debug_file(logger)
+        Logging.enable_verbose_file(logger)
 
-        Logging._setup_log_file(Logging.logger, debug_file, logging.DEBUG)
-        Logging._setup_log_file(Logging.logger, verbose_file, logging.VERBOSE, limit_level=True)
+        map(Logging.enable_debug_file, Logging.OUR_LOGGERS)
+        map(Logging.enable_verbose_file, Logging.OUR_LOGGERS)
 
-        if sentry is not None:
-            sentry.enable_logging_breadcrumbs(Logging.logger)
+        logger.debug("logger set up: level={}, debug file={}, verbose file={}".format(level, debug_file, verbose_file))
 
-        Logging.logger.debug("logger set up: level={}, debug file={}, verbose file={}".format(level, debug_file,
-                                                                                              verbose_file))
-
-        return Logging.logger
+        return logger
