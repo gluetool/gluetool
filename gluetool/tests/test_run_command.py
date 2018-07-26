@@ -56,14 +56,6 @@ def _assert_logging(log, record_count, cmd, stdout=None, stderr=None, stdout_ind
         assert False
 
 
-def _assert_output(log, index, verbose_note=True, content=None):
-    if verbose_note:
-        assert log.records[index].message == 'See "verbose" log for the actual message'
-        index += 1
-
-    assert log.records[index].message == content
-
-
 def test_sanity(popen, log):
     """
     Basic usage - run a command, and log its output.
@@ -80,8 +72,10 @@ def test_sanity(popen, log):
     popen.assert_called_once_with(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     _assert_logging(log, 8, command)
-    _assert_output(log, 4, content='stdout:\n---v---v---v---v---v---\nroot listing\n---^---^---^---^---^---')
-    _assert_output(log, 6, content='stderr:\n---v---v---v---v---v---\n\n---^---^---^---^---^---')
+    assert log.records[4].message == 'stdout: (See "verbose" log for the actual message)'
+    assert log.records[5].message == 'stdout:\n---v---v---v---v---v---\nroot listing\n---^---^---^---^---^---'
+    assert log.records[6].message == 'stderr: (See "verbose" log for the actual message)'
+    assert log.records[7].message == 'stderr:\n---v---v---v---v---v---\n\n---^---^---^---^---^---'
 
 
 @pytest.mark.parametrize('actual_errno, expected_exc, expected_message', [
@@ -121,8 +115,8 @@ def test_exit_code_error(popen, log):
         Command(command).run()
 
     _assert_logging(log, 6, command)
-    _assert_output(log, 4, content='stdout:\n  command produced no output', verbose_note=False)
-    _assert_output(log, 5, content='stderr:\n  command produced no output', verbose_note=False)
+    assert log.records[4].message == 'stdout:\n  command produced no output'
+    assert log.records[5].message == 'stderr:\n  command produced no output'
 
     assert excinfo.value.output.exit_code == 1
     assert excinfo.value.output.stdout is None
@@ -148,8 +142,10 @@ def test_std_streams_mix(popen, log):
     assert output.stderr == 'This goes to stderr\n'
 
     _assert_logging(log, 8, command)
-    _assert_output(log, 4, content='stdout:\n---v---v---v---v---v---\nThis goes to stdout\n\n---^---^---^---^---^---')
-    _assert_output(log, 6, content='stderr:\n---v---v---v---v---v---\nThis goes to stderr\n\n---^---^---^---^---^---')
+    assert log.records[4].message == 'stdout: (See "verbose" log for the actual message)'
+    assert log.records[5].message == 'stdout:\n---v---v---v---v---v---\nThis goes to stdout\n\n---^---^---^---^---^---'
+    assert log.records[6].message == 'stderr: (See "verbose" log for the actual message)'
+    assert log.records[7].message == 'stderr:\n---v---v---v---v---v---\nThis goes to stderr\n\n---^---^---^---^---^---'
 
 
 @pytest.mark.parametrize('actual_comm, stdout, stderr', [
@@ -221,7 +217,7 @@ def test_forwarding(popen, log, actual_comm, stdout, stderr):
         index += 1
 
     else:
-        assert log.records[index].message == 'See "verbose" log for the actual message'
+        assert log.records[index].message == 'stdout: (See "verbose" log for the actual message)'
         assert log.records[index + 1].message == 'stdout:\n---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stdout_output)
 
         index += 2
@@ -230,7 +226,7 @@ def test_forwarding(popen, log, actual_comm, stdout, stderr):
         assert log.records[index].message == 'stderr:\n  command produced no output'
 
     else:
-        assert log.records[index].message == 'See "verbose" log for the actual message'
+        assert log.records[index].message == 'stderr: (See "verbose" log for the actual message)'
         assert log.records[index + 1].message == 'stderr:\n---v---v---v---v---v---\n{}\n---^---^---^---^---^---'.format(stderr_output)
 
 
