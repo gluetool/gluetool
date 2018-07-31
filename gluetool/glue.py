@@ -1119,7 +1119,7 @@ class Glue(Configurable):
         """
         Infere module instance calling the eval context shared function.
 
-        :rtype: gluetool.glue..Module
+        :rtype: gluetool.glue.Module
         """
 
         stack = inspect.stack()
