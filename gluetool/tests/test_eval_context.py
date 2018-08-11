@@ -39,5 +39,5 @@ def test_module_via_glue(module, log):
     assert 'MODULE' in eval_context
     assert eval_context['MODULE'] is None
 
-    assert log.records[-2].message == 'Cannot infer calling module of eval_context'
-    assert log.records[-2].levelno == logging.WARNING
+    assert log.records[-3].message == 'Cannot infer calling module of eval_context'
+    assert log.records[-3].levelno == logging.WARNING
