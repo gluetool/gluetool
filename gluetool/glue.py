@@ -3,6 +3,7 @@
 import argparse
 import ConfigParser
 import imp
+import inspect
 import logging
 import os
 import sys
@@ -1121,6 +1122,36 @@ class Glue(Configurable):
             'ENV': dict(os.environ)
         }
 
+    def _eval_context_module_caller(self):
+        """
+        Infere module instance calling the eval context shared function.
+
+        :rtype: gluetool.glue.Module
+        """
+
+        stack = inspect.stack()
+        log_dict(self.verbose, 'stack', stack)
+
+        # When being called as a regular shared function, the call stack layout should be
+        # as follows:
+        #
+        # Glue._eval_context_module_caller - this helper method, caller of inspect.stack()
+        # Glue._eval_context - our caller, the actual shared function body
+        # Glue.shared - shared function call dispatcher of Glue class, calls Glue._eval_context
+        # Module.shared - shared function call dispatcher of Module class, calls Glue.shared internally
+
+        # pylint: disable=too-many-boolean-expressions
+        if len(stack) < 4 \
+           or stack[0][3] != '_eval_context_module_caller' \
+           or stack[1][3] != '_eval_context' \
+           or stack[2][3] != 'shared' \
+           or stack[3][3] != 'shared' \
+           or 'self' not in stack[3][0].f_locals:
+            self.warn('Cannot infer calling module of eval_context')
+            return None
+
+        return stack[3][0].f_locals['self']
+
     def _eval_context(self):
         """
         Gather contexts of all modules in a pipeline and merge them together.
@@ -1136,7 +1167,9 @@ class Glue(Configurable):
 
         self.debug('gather pipeline eval context')
 
-        context = {}
+        context = {
+            'MODULE': self._eval_context_module_caller()
+        }
 
         # first "module" is this instance - it provides eval_context as well.
         for module in [self] + self._module_instances:
