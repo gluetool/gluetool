@@ -1,9 +1,5 @@
 """
-Checker for using unknown module options.
-
-Does not handle multiple gluetool modules within the same Python module well, all their
-options are stored under the same key (file name), which leads to false negatives. This
-will be fixed later.
+Checker for option default values.
 """
 
 from pylint.checkers import BaseChecker, utils
@@ -56,6 +52,15 @@ class OptionDefaultChecker(BaseChecker):
            'baz': {
                'help': 'Sets something completely different (default %(default)s).',
                'default': 79
+           },
+           'empty-list-is-default': {
+               'help': '''
+                       Empty list as a default value does not have to use macro, to make it more readable.
+                       Macro would produce ``[]`` which demands user to decode it as "an empty list, hence
+                       probably the default value is not set at all", while literal ``none`` is more
+                       understandable (default: none).
+                       ''',
+               'default': []
            }
        }
 
@@ -124,6 +129,13 @@ class OptionDefaultChecker(BaseChecker):
             if 'default: ' in help_text:
                 if 'default' not in params:
                     self.add_message(self.MESSAGE_ID_NO_DEFAULT, args=name, node=closest_node)
+                    continue
+
+                if isinstance(params['default'], list):
+                    if not params['default'] and 'default: none' in help_text:
+                        continue
+
+                    self.add_message(self.MESSAGE_ID_HARD_DEFAULT, args=name, node=closest_node)
                     continue
 
                 if 'default: %(default)s' not in help_text:
