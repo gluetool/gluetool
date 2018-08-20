@@ -24,6 +24,7 @@ import docutils.writers
 import jinja2
 import sphinx.writers.text
 import sphinx.locale
+import sphinx.util.nodes
 
 from .color import Colors
 from .log import Logging
@@ -126,6 +127,23 @@ def py_default_role(role, rawtext, text, lineno, inliner, options=None, content=
 # register default handler for roles we're interested in
 for python_role in ('py:class', 'py:meth', 'py:mod'):
     docutils.parsers.rst.roles.register_canonical_role(python_role, py_default_role)
+
+
+def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context=None):
+    # pylint: disable=unused-argument,too-many-arguments
+    """
+    Format ``:doc:`` roles, used to reference another bits of documentation.
+    """
+
+    _, title, target = sphinx.util.nodes.split_explicit_title(text)
+
+    if target and target[0] == '/':
+        target = 'docs/source/{}.rst'.format(target[1:])
+
+    return [docutils.nodes.literal(rawsource=text, text='{} (See {})'.format(title, target))], []
+
+
+docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)
 
 
 class DummyTextBuilder:
