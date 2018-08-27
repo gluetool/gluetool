@@ -30,7 +30,7 @@ if __name__ == '__main__':
               'colorama==0.3.7',
               'docutils==0.13.1',
               'enum34==1.1.6',
-              'Jinja2==2.9.6',
+              'Jinja2==2.10',
               'lxml==3.7.3',
               'packaging==16.8',
               'raven==6.0.0',
