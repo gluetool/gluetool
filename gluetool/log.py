@@ -91,7 +91,7 @@ def verbose_logger(self, message, *args, **kwargs):
         hint = message
 
     else:
-        new_line_index = message.index('\n')
+        new_line_index = message.find('\n')
 
         if new_line_index == -1:
             hint = '{}...'.format(message[0:keep_len])
