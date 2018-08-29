@@ -74,6 +74,19 @@ class GlueError(Exception):
 
         self.caused_by = caused_by
 
+    @property
+    def submit_to_sentry(self):
+        # pylint: disable=no-self-use
+        """
+        Decide whether the exception should be submitted to Sentry or not. By default,
+        all exceptions are submitted.
+
+        :rtype: bool
+        :returns: ``True`` when the exception should be submitted to Sentry, ``False`` otherwise.
+        """
+
+        return True
+
     def sentry_fingerprint(self, current):
         # pylint: disable=no-self-use
         """

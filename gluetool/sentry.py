@@ -181,6 +181,13 @@ class Sentry(object):
         if not self.enabled:
             return
 
+        exc = failure.exception
+        if exc and not getattr(exc, 'submit_to_sentry', True):
+            if logger:
+                logger.warn('As requested, exception {} not submitted to Sentry'.format(exc.__class__.__name__))
+
+            return
+
         return self._capture('raven.events.Exception', logger=logger, failure=failure, **kwargs)
 
     def submit_warning(self, msg, logger=None, **kwargs):
