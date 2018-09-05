@@ -26,19 +26,21 @@ if __name__ == '__main__':
               ])
           ],
           install_requires=[
-              'beautifulsoup4==4.5.3',
-              'colorama==0.3.7',
-              'docutils==0.13.1',
+              'beautifulsoup4==4.6.3',
+              'colorama==0.3.9',
+              'docutils==0.14',
               'enum34==1.1.6',
               'Jinja2==2.10',
-              'lxml==3.7.3',
-              'packaging==16.8',
-              'raven==6.0.0',
-              'requests==2.18.4',
+              'lxml==4.2.4',
+              'packaging==17.1',
+              'raven==6.9.0',
+              'requests==2.19.1',
               'requests-toolbelt==0.8.0',
-              'ruamel.yaml==0.15.34',
+              # since 0.15.52, it returns ordereddict instead of pure dicts, making format_dict unhappy
+              'ruamel.yaml==0.15.51',
+              # newer versions bring way too many incompabilities, needs deeper inspection
               'Sphinx==1.5.2',
-              'sphinx-rtd-theme==0.1.9',
+              'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',
               'urlnorm==1.1.4'
           ],
