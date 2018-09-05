@@ -61,10 +61,14 @@ class Sentry(object):
 
         self._tag_map = {}
 
-        if tags_map_env_var and tags_map_env_var in os.environ:
-            for pair in os.environ[tags_map_env_var].split(','):
-                tag, env_var = pair.split('=')
-                self._tag_map[env_var.strip()] = tag.strip()
+        if tags_map_env_var and os.environ.get(tags_map_env_var):
+            try:
+                for pair in os.environ[tags_map_env_var].split(','):
+                    tag, env_var = pair.split('=')
+                    self._tag_map[env_var.strip()] = tag.strip()
+
+            except ValueError:
+                raise gluetool.GlueError('Cannot parse content of {} environment variable'.format(tags_map_env_var))
 
         if not dsn_env_var:
             return
