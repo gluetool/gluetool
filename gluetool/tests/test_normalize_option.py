@@ -4,7 +4,7 @@ import string
 import pytest
 from hypothesis import assume, given, strategies as st
 
-from gluetool.utils import normalize_bool_option, normalize_multistring_option, normalize_path, normalize_path_option
+from gluetool.utils import normalize_bool_option, normalize_multistring_option, normalize_path, normalize_path_option, normalize_shell_option
 
 
 def all_casings(input_string):
@@ -80,3 +80,17 @@ def test_normalize_path_option(value):
     expected = [normalize_path(path) for paths in value for path in paths.split(',')]
 
     assert normalize_path_option(value) == expected
+
+
+@pytest.mark.parametrize('option_value, expected', (
+    (
+        '--foo --bar',
+        ['--foo', '--bar']
+    ),
+    (
+        ['--foo --bar', '--baz="abc def"', '--foo abc\\ def'],
+        ['--foo', '--bar', '--baz=abc def', '--foo', 'abc def']
+    )
+))
+def test_normalize_shell_option(option_value, expected):
+    assert normalize_shell_option(option_value) == expected

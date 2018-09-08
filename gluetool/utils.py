@@ -13,6 +13,7 @@ import json
 import os
 import pipes
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -167,6 +168,42 @@ def normalize_multistring_option(option_value, separator=','):
     # using sum - with an empty list as a start, it works for lists just as nicely.
     return sum([
         [value.strip() for value in item.split(separator)] for item in values
+    ], [])
+
+
+def normalize_shell_option(option_value):
+    """
+    Reduce string, using a shell-like syntax, or possibly a list of such strings,
+    to a simple list of items. Strips away the whitespace wrapping such items.
+
+    .. code-block:: bash
+
+        foo --option value1 --option value2\\ value3 --option "value4 value5"
+
+    Or, when option is set by a config file:
+
+    .. code-block:: bash
+
+        option = value1 value2\\ value3 "value4 value5"
+
+    After processing, different variants can be found when ``option('option')`` is called,
+    ``['value1', 'value2,value3']``, ``['value1,value2,value3']``, ``'value1'`` and ``value1, value2, value3``.
+
+    To reduce the necessary work, use this helper function to treat such option's value,
+    and get simple ``['value1', 'value2 value3', 'value4 value5']`` structure.
+    """
+
+    if not option_value:
+        return []
+
+    # If the value is string, convert it to list - it comes from a config file,
+    # command-line parsing always produces a list. This reduces config file values
+    # to the same structure command-line produces.
+    values = [option_value] if isinstance(option_value, str) else option_value
+
+    # Now split each item using shlex, and merge these lists into a single one.
+    return sum([
+        shlex.split(value) for value in values
     ], [])
 
 
