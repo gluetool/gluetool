@@ -153,6 +153,8 @@ _TRACEBACK_TEMPLATE = """
 {%- set label = '{}:'.format(label) %}
 ---v---v---v---v---v--- {{ label | center(10) }} ---v---v---v---v---v---
 
+At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
+
 {{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception.message }}
 
 {% for filepath, lineno, fn, text, frame in stack %}
