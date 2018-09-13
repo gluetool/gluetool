@@ -10,17 +10,19 @@ import gluetool.log
 
 EXPECTED = jinja2.Template(r"""---v---v---v---v---v--- Exception: ---v---v---v---v---v---
 
+At {{ FILE }}:81, in foo:
+
 gluetool.glue.GlueError: Foo failed
 
 
-  File "{{ FILE }}", line 83, in test_sanity
+  File "{{ FILE }}", line 87, in test_sanity
     foo\(\)
 
     Local variables:
         exc = Foo failed
         excinfo = \(<class 'gluetool\.glue\.GlueError'>, GlueError\('Foo failed',\), <traceback object at 0x[0-9a-f]+>\)
 
-  File "{{ FILE}}", line 77, in foo
+  File "{{ FILE}}", line 81, in foo
     raise gluetool.GlueError\('Foo failed'\)
 
     Local variables:
@@ -29,21 +31,23 @@ gluetool.glue.GlueError: Foo failed
 
 ---v---v---v---v---v--- Caused by: ---v---v---v---v---v---
 
+At {{ FILE }}:69, in baz:
+
 exceptions.ValueError: Z is really lame value
 
 
-  File "{{ FILE }}", line 74, in foo
+  File "{{ FILE }}", line 78, in foo
     return bar\(17\)
 
     Local variables:
 
-  File "{{ FILE }}", line 69, in bar
+  File "{{ FILE }}", line 73, in bar
     return baz\(13, p\)
 
     Local variables:
         p = 17
 
-  File "{{ FILE }}", line 65, in baz
+  File "{{ FILE }}", line 69, in baz
     raise ValueError\('Z is really lame value'\)
 
     Local variables:
