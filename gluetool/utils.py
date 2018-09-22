@@ -35,9 +35,6 @@ from gluetool.log import Logging, ContextAdapter, log_blob, BlobLogger, format_d
     PackageAdapter
 
 
-YAML = ruamel.yaml.YAML()
-YAML.indent(sequence=4, mapping=4, offset=2)
-
 try:
     # pylint: disable=ungrouped-imports
     from subprocess import DEVNULL
@@ -863,6 +860,20 @@ def render_template(template, logger=None, **kwargs):
         raise GlueError('Cannot render template: {}'.format(exc))
 
 
+# pylint: disable=invalid-name
+def YAML():
+    """
+    Provides YAML read/write interface with common settings.
+
+    :rtype: ruamel.yaml.YAML
+    """
+
+    yaml = ruamel.yaml.YAML()
+    yaml.indent(sequence=4, mapping=4, offset=2)
+
+    return yaml
+
+
 def from_yaml(yaml_string):
     """
     Convert YAML in a string into Python data structures.
@@ -871,7 +882,7 @@ def from_yaml(yaml_string):
     JSON siblings to provide unified access to JSON and YAML.
     """
 
-    return YAML.load(yaml_string)
+    return YAML().load(yaml_string)
 
 
 def load_yaml(filepath, logger=None):
@@ -899,10 +910,11 @@ def load_yaml(filepath, logger=None):
 
     try:
         with open(real_filepath, 'r') as f:
-            data = YAML.load(f)
-            logger.debug("loaded YAML data from '{}':\n{}".format(filepath, format_dict(data)))
+            data = YAML().load(f)
 
-            return data
+        logger.debug("loaded YAML data from '{}':\n{}".format(filepath, format_dict(data)))
+
+        return data
 
     except ruamel.yaml.YAMLError as e:
         raise GlueError("Unable to load YAML file '{}': {}".format(filepath, str(e)))
@@ -928,9 +940,8 @@ def dump_yaml(data, filepath, logger=None):
         raise GlueError("Cannot save file in nonexistent directory '{}'".format(dirpath))
 
     try:
-
         with open(real_filepath, 'w') as f:
-            YAML.dump(data, f)
+            YAML().dump(data, f)
             f.flush()
 
     except ruamel.yaml.YAMLError as e:
