@@ -571,7 +571,12 @@ class LoggingFormatter(logging.Formatter):
             # without starting new line. We must do it, to make report more readable.
             values['exc_text'] = '\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
 
-        # List all context properties of record
+        # Handle context properties of the record
+        def _add_context(context_name, context_value):
+            fmt.insert(2, '[{%s}]' % context_name)
+            values[context_name] = context_value
+
+        # find all context properties attached to the record
         ctx_properties = [prop for prop in dir(record) if prop.startswith('ctx_')]
 
         if ctx_properties:
@@ -583,9 +588,15 @@ class LoggingFormatter(logging.Formatter):
             for name in sorted_ctxs:
                 _, value = getattr(record, name)
 
-                fmt.insert(2, '[{%s}]' % name)
-                values[name] = value
+                _add_context(name, value)
 
+        # add thread name context if we're not in the main thread
+        thread_name = getattr(record, 'threadName', None)
+
+        if thread_name is not None and thread_name != 'MainThread':
+            _add_context('thread_name', thread_name)
+
+        # format message
         msg = ' '.join(fmt).format(**values)
 
         if self.colors and record.levelno in self._level_color:
