@@ -957,6 +957,14 @@ class Glue(Configurable):
                 'help': 'Silence info messages',
                 'action': 'store_true'
             },
+            'show-traceback': {
+                'help': """
+                        Display exception tracebacks on terminal (besides the debug file when ``--debug-file``
+                        is used) (default: %(default)s).
+                        """,
+                'action': 'store_true',
+                'default': False
+            },
             ('v', 'verbose'): {
                 'help': 'Log **all** messages to the terminal (WARNING: even more verbose than ``-d``!).',
                 'action': 'store_true'
@@ -1483,10 +1491,13 @@ class Glue(Configurable):
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
 
+        show_traceback = gluetool.utils.normalize_bool_option(self.option('show-traceback'))
+
         logger = Logging.create_logger(level=level,
                                        debug_file=debug_file,
                                        verbose_file=verbose_file,
-                                       sentry=self._sentry)
+                                       sentry=self._sentry,
+                                       show_traceback=show_traceback)
 
         self.logger = ContextAdapter(logger)
         self.logger.connect(self)
