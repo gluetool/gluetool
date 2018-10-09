@@ -716,10 +716,12 @@ class Logging(object):
 
         return handler
 
+    # pylint: disable=too-many-arguments
     @staticmethod
     def create_logger(level=DEFAULT_LOG_LEVEL,
                       debug_file=None, verbose_file=None,
-                      sentry=None, sentry_submit_warning=None):
+                      sentry=None, sentry_submit_warning=None,
+                      show_traceback=False):
         """
         Create and setup logger.
 
@@ -741,6 +743,8 @@ class Logging(object):
             server.
         :param callable sentry_submit_warning: if set, it is used by ``warning`` methods of derived
             loggers to submit warning to the Sentry server, if asked by a caller to do so.
+        :param bool show_traceback: if set, exception tracebacks would be sent to ``stderr`` handler
+            as well as to the debug file.
         :rtype: logging.Logger
         :returns: a :py:class:`logging.Logger` instance, set up for logging.
         """
@@ -766,6 +770,9 @@ class Logging(object):
 
         # set log level to new value
         Logging.stderr_handler.setLevel(level)
+
+        # honor traceback display setup
+        Logging.stderr_handler.formatter.log_tracebacks = show_traceback
 
         # create debug and verbose files
         Logging.debug_file_handler = Logging._setup_log_file(debug_file, logging.DEBUG)
