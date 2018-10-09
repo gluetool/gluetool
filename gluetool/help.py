@@ -29,6 +29,13 @@ import sphinx.util.nodes
 from .color import Colors
 from .log import Logging
 
+# Type annotations
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    import gluetool
+    import gluetool.glue
+
 
 # Initialize Sphinx locale settings
 sphinx.locale.init([os.path.split(sphinx.locale.__file__)], None)
@@ -53,14 +60,20 @@ sphinx.writers.text.MAXWIDTH = CROP_WIDTH
 # Semantic colorizers
 # pylint: disable=invalid-name
 def C_FUNCNAME(text):
+    # type: (str) -> str
+
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_ARGNAME(text):
+    # type: (str) -> str
+
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_LITERAL(text):
+    # type: (str) -> str
+
     return Colors.style(text, fg='cyan', reset=True)
 
 
@@ -74,21 +87,29 @@ def C_LITERAL(text):
 _original_TextTranslator = sphinx.writers.text.TextTranslator
 
 
-class TextTranslator(sphinx.writers.text.TextTranslator):
+class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no type info in TextTranslator
     # literals, ``foo``
     def visit_literal(self, node):
+        # type: (Any) -> None
+
         self.add_text(Colors.style('', fg='cyan', reset=False))
 
     def depart_literal(self, node):
+        # type: (Any) -> None
+
         self.add_text(Colors.style('', reset=True))
 
     # "fields" are used to represent (shared) function parameters
     def visit_field_name(self, node):
+        # type: (Any) -> None
+
         _original_TextTranslator.visit_field_name(self, node)
 
         self.add_text(Colors.style('', fg='blue', reset=False))
 
     def depart_field_name(self, node):
+        # type: (Any) -> None
+
         self.add_text(Colors.style('', reset=True))
 
         _original_TextTranslator.depart_field_name(self, node)
@@ -100,14 +121,18 @@ sphinx.writers.text.TextTranslator = TextTranslator
 # Custom help formatter that let's us control line length
 class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
     def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         if kwargs.get('width', None) is None:
             kwargs['width'] = CROP_WIDTH
 
         super(LineWrapRawTextHelpFormatter, self).__init__(*args, **kwargs)
 
-    def _split_lines(self, text, width):
+    def _split_lines(self, text, width):  # type: ignore  # incompatible with super type because of unicode
+        # type: (str, int) -> List[str]
+
         text = self._whitespace_matcher.sub(' ', text).strip()
-        return textwrap.wrap(text, width)
+        return cast(List[str], textwrap.wrap(text, width))
 
 
 #
@@ -116,6 +141,8 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
 #
 
 def py_default_role(role, rawtext, text, lineno, inliner, options=None, content=None):
+    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+
     # pylint: disable=unused-argument,too-many-arguments
     """
     Default handler we use for ``py:...`` roles, translates text to literal node.
@@ -130,6 +157,8 @@ for python_role in ('py:class', 'py:meth', 'py:mod'):
 
 
 def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context=None):
+    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+
     # pylint: disable=unused-argument,too-many-arguments
     """
     Format ``:doc:`` roles, used to reference another bits of documentation.
@@ -171,6 +200,8 @@ class DummyTextBuilder:
 
 
 def rst_to_text(text):
+    # type: (str) -> str
+
     """
     Render given text, written with RST, as plain text.
 
@@ -179,10 +210,12 @@ def rst_to_text(text):
     :returns: plain text representation of ``text``.
     """
 
-    return docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder))
+    return cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
 
 
 def trim_docstring(docstring):
+    # type: (str) -> str
+
     """
     Quoting `PEP 257 <https://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation>`:
 
@@ -229,6 +262,8 @@ def trim_docstring(docstring):
 
 
 def docstring_to_help(docstring, width=None, line_prefix='    '):
+    # type: (str, Optional[int], str) -> str
+
     """
     Given docstring, process and render it as a plain text. This conversion function
     is used to generate nice and readable help strings used when printing help on
@@ -250,13 +285,13 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
     # For each line - which is actually a paragraph, given the text comes from RST - wrap it
     # to fit inside given line length (a bit shorter, there's a prefix for each line!).
-    wrapped_lines = []
+    wrapped_lines = []  # type: List[str]
     wrap = partial(textwrap.wrap, width=width - len(line_prefix), initial_indent=line_prefix,
                    subsequent_indent=line_prefix)
 
     for line in processed.splitlines():
         if line:
-            wrapped_lines += wrap(line)
+            wrapped_lines += cast(List[str], wrap(line))
         else:
             # yeah, we could just append empty string but line_prefix could be any string, e.g. 'foo: '
             wrapped_lines.append(line_prefix)
@@ -265,6 +300,8 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
 
 def option_help(txt):
+    # type: (str) -> str
+
     """
     Given option help text, format it to be more suitable for command-line help.
     Options can provide a single line of text, or mutiple lines (using triple
@@ -284,6 +321,8 @@ def option_help(txt):
 
 
 def function_help(func, name=None):
+    # type: (Callable[..., Any], Optional[str]) -> Tuple[str, str]
+
     """
     Uses function's signature and docstring to generate a plain text help describing
     the function.
@@ -299,14 +338,17 @@ def function_help(func, name=None):
     signature = inspect.getargspec(func)
     no_default = object()
 
+    defaults = []  # type: List[Union[str, object]]
+
     # arguments that don't have default value are assigned our special value to let us tell the difference
     # between "no default" and "None is the default"
     if signature.defaults is None:
         defaults = [no_default for _ in range(len(signature.args) - 1)]
 
     else:
-        args, defaults = signature.args, signature.defaults
-        defaults = [no_default for _ in range(len(args) - 1 - len(defaults))] + list(defaults)
+        defaults = [
+            no_default for _ in range(len(signature.args) - 1 - len(signature.defaults))
+        ] + list(signature.defaults)
 
     args = []
     for arg, default in zip(signature.args[1:], defaults):
@@ -317,7 +359,7 @@ def function_help(func, name=None):
             if isinstance(default, str):
                 default = "'{}'".format(default)
 
-            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(default)))
+            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(str(default))))
 
     return (
         # signature
@@ -328,6 +370,8 @@ def function_help(func, name=None):
 
 
 def functions_help(functions):
+    # type: (List[Tuple[str, Callable[..., Any]]]) -> str
+
     """
     Generate help for a set of functions.
 
@@ -343,10 +387,12 @@ def functions_help(functions):
 
     {{ body }}
     {% endfor %}
-    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions])
+    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions]).encode('ascii')
 
 
 def extract_eval_context_info(source, logger=None):
+    # type: (gluetool.glue.Configurable, Optional[gluetool.log.ContextAdapter]) -> Dict[str, str]
+
     """
     Extract information of evaluation context content from the ``source`` - a module
     or any other object with ``eval_context`` property. The information we're looking
@@ -368,7 +414,7 @@ def extract_eval_context_info(source, logger=None):
     # Cannot do "source.eval_context" because we'd get the value of property, which
     # is usualy a dict. We cannot let it evaluate and return the value, therefore
     # we must get it via its parent class.
-    eval_context = source.__class__.eval_context
+    eval_context = source.__class__.eval_context  # type: ignore  # we're operating on Module classes, eval_context exists
 
     # this is not a cyclic import, yet pylint thinks so :/
     # pylint: disable=cyclic-import
@@ -395,7 +441,7 @@ def extract_eval_context_info(source, logger=None):
 
         # find ``__content__ = { ...`` assignment inside the function
         # ``tree`` is the whole module, ``tree.body[0]`` is the function definition
-        for node in tree.body[0].body:
+        for node in tree.body[0].body:  # type: ignore  # if `body` is missing, we can handle it
             if not isinstance(node, ast.Assign):
                 continue
 
@@ -426,7 +472,7 @@ def extract_eval_context_info(source, logger=None):
         # within a context of some globals/locals mappings. We give eval our custom locals mapping, which will
         # result in __content__ being created in it - and we can just pick it up from this mapping when eval
         # is done.
-        module_locals = {}
+        module_locals = {}  # type: Dict[str, Any]
 
         # this should be reasonably safe, don't raise a warning then...
         # pylint: disable=eval-used
@@ -444,6 +490,8 @@ def extract_eval_context_info(source, logger=None):
 
 
 def eval_context_help(source):
+    # type: (gluetool.glue.Configurable) -> str
+
     """
     Generate and format help for an evaluation context of a module. Looks for context content,
     and gives it a nice header, suitable for command-line help, applying formatting along the way.
@@ -469,4 +517,4 @@ def eval_context_help(source):
 
 {{ description | indent(4, true) }}
 {% endfor %}
-""").render(CONTEXT=context_content).strip()
+""").render(CONTEXT=context_content).strip().encode('ascii')

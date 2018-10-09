@@ -31,18 +31,27 @@ import requests as original_requests
 import ruamel.yaml
 
 from gluetool import GlueError, SoftGlueError, GlueCommandError
-from gluetool.log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict, print_wrapper, \
-    PackageAdapter
+from .log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict, print_wrapper, PackageAdapter
+
+# Type annotations
+# pylint: disable=unused-import, wrong-import-order
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Pattern, Tuple, Union  # noqa
+from .log import LoggingFunctionType, LoggingWarningFunctionType  # noqa
+
+if TYPE_CHECKING:
+    import logging  # noqa
 
 
 try:
     # pylint: disable=ungrouped-imports
-    from subprocess import DEVNULL
+    from subprocess import DEVNULL  # type: ignore
 except ImportError:
     DEVNULL = open(os.devnull, 'wb')
 
 
 def deprecated(func):
+    # type: (Callable) -> Callable
+
     """
     This is a decorator which can be used to mark functions as deprecated. It will result in a warning being emitted
     when the function is used.
@@ -50,6 +59,8 @@ def deprecated(func):
 
     @functools.wraps(func)
     def new_func(*args, **kwargs):
+        # type: (*Any, **Any) -> Any
+
         warnings.simplefilter('always', DeprecationWarning)  # turn off filter
         warnings.warn('Function {} is deprecated.'.format(func.__name__), category=DeprecationWarning,
                       stacklevel=2)
@@ -61,6 +72,8 @@ def deprecated(func):
 
 
 def dict_update(dst, *args):
+    # type: (Dict[Any, Any], *Dict[Any, Any]) -> Dict[Any, Any]
+
     """
     Python's ``dict.update`` does not return the dictionary just updated but a ``None``. This function
     is a helper that does updates the dictionary *and* returns it. So, instead of:
@@ -89,6 +102,8 @@ def dict_update(dst, *args):
 
 
 def normalize_bool_option(option_value):
+    # type: (Union[str, bool]) -> bool
+
     """
     Convert option value to Python's boolean.
 
@@ -127,6 +142,8 @@ def normalize_bool_option(option_value):
 
 
 def normalize_multistring_option(option_value, separator=','):
+    # type: (Union[str, List[str]], Optional[str]) -> List[str]
+
     """
     Reduce string, representing comma-separated list of items, or possibly a list of such strings,
     to a simple list of items. Strips away the whitespace wrapping such items.
@@ -169,6 +186,8 @@ def normalize_multistring_option(option_value, separator=','):
 
 
 def normalize_shell_option(option_value):
+    # type: (Union[str, List[str]]) -> List[str]
+
     """
     Reduce string, using a shell-like syntax, or possibly a list of such strings,
     to a simple list of items. Strips away the whitespace wrapping such items.
@@ -205,6 +224,8 @@ def normalize_shell_option(option_value):
 
 
 def normalize_path(path):
+    # type: (str) -> str
+
     """
     Apply common treatments on a given path:
 
@@ -216,6 +237,8 @@ def normalize_path(path):
 
 
 def normalize_path_option(option_value, separator=','):
+    # type: (Union[str, List[str]], Optional[str]) -> List[str]
+
     """
     Reduce many ways how list of paths is specified by user, to a simple list of paths. See
     :py:func:`normalize_multistring_option` for more details.
@@ -231,7 +254,10 @@ class IncompatibleOptionsError(SoftGlueError):
 class Bunch(object):
     # pylint: disable=too-few-public-methods
 
+    @deprecated
     def __init__(self, **kwargs):
+        # type: (**Any) -> None
+
         self.__dict__.update(kwargs)
 
 
@@ -244,6 +270,8 @@ class ThreadAdapter(ContextAdapter):
     """
 
     def __init__(self, logger, thread):
+        # type: (Union[logging.Logger, ContextAdapter], threading.Thread) -> None
+
         super(ThreadAdapter, self).__init__(logger, {'ctx_thread_name': (5, thread.name)})
 
 
@@ -260,7 +288,14 @@ class WorkerThread(threading.Thread):
     :param fn_kwargs: keyword arguments for `fn`
     """
 
+    # type stubs
+    # pylint: disable=not-callable
+    debug = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
+
     def __init__(self, logger, fn, fn_args=None, fn_kwargs=None, **kwargs):
+        # type: (ContextAdapter, Callable[..., Any], Optional[Tuple[str, ...]], Optional[Dict[Any, Any]], **Any) -> None
+
         threading.Thread.__init__(self, **kwargs)
 
         self.logger = ThreadAdapter(logger, self)
@@ -270,9 +305,11 @@ class WorkerThread(threading.Thread):
         self._args = fn_args or ()
         self._kwargs = fn_kwargs or {}
 
-        self.result = None
+        self.result = None  # type: Union[Exception, Any]
 
     def run(self):
+        # type: () -> None
+
         self.debug('worker thread started')
 
         try:
@@ -289,6 +326,8 @@ class WorkerThread(threading.Thread):
 
 class StreamReader(object):
     def __init__(self, stream, name=None, block=16):
+        # type: (Any, Optional[str], Optional[int]) -> None
+
         """
         Wrap blocking ``stream`` with a reading thread. The threads read from
         the (normal, blocking) `stream` and adds bits and pieces into the `queue`.
@@ -300,10 +339,12 @@ class StreamReader(object):
 
         # List would fine as well, however deque is better optimized for
         # FIFO operations, and it provides the same thread safety.
-        self._queue = collections.deque()
-        self._content = []
+        self._queue = collections.deque()  # type: collections.deque
+        self._content = []  # type: List[str]
 
         def _enqueue():
+            # type: () -> None
+
             """
             Read what's available in stream and add it into the queue
             """
@@ -325,16 +366,24 @@ class StreamReader(object):
 
     @property
     def name(self):
+        # type: () -> str
+
         return self._name
 
     @property
     def content(self):
+        # type: () -> str
+
         return ''.join(self._content)
 
     def wait(self):
+        # type: () -> None
+
         self._thread.join()
 
     def read(self):
+        # type: () -> Optional[Any]
+
         try:
             return self._queue.popleft()
 
@@ -349,6 +398,8 @@ class ProcessOutput(object):
 
     # pylint: disable=too-many-arguments,too-few-public-methods
     def __init__(self, cmd, exit_code, stdout, stderr, kwargs):
+        # type: (List[str], int, str, str, Dict[str, Any]) -> None
+
         self.cmd = cmd
         self.kwargs = kwargs
 
@@ -357,6 +408,8 @@ class ProcessOutput(object):
         self.stderr = stderr
 
     def log_stream(self, stream, logger):
+        # type: (str, ContextAdapter) -> None
+
         content = getattr(self, stream)
 
         if content is None:
@@ -366,9 +419,11 @@ class ProcessOutput(object):
                 logger.debug('{}:\n  command forwarded the output to its parent'.format(stream))
 
         else:
-            log_blob(logger.verbose, stream, content)
+            log_blob(logger.verbose, stream, content)  # type: ignore  # ContextAdapter *does* have `verbose`
 
     def log(self, logger):
+        # type: (ContextAdapter) -> None
+
         logger.debug('command exited with code {}'.format(self.exit_code))
 
         self.log_stream('stdout', logger)
@@ -411,8 +466,19 @@ class Command(object):
 
     # pylint: disable=too-few-public-methods
 
+    # logging type stubs
+    # pylint: disable=not-callable
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
+
     def __init__(self, executable, options=None, logger=None):
-        self.logger = logger or ContextAdapter(Logging.get_logger())
+        # type: (List[str], Optional[List[str]], Optional[ContextAdapter]) -> None
+
+        self.logger = logger or Logging.get_logger()
         self.logger.connect(self)
 
         self.executable = executable
@@ -421,15 +487,17 @@ class Command(object):
         self.use_shell = False
         self.quote_args = False
 
-        self._command = None
-        self._popen_kwargs = None
-        self._process = None
-        self._exit_code = None
+        self._command = None  # type: Optional[List[str]]
+        self._popen_kwargs = None  # type: Optional[Dict[str, Any]]
+        self._process = None  # type: Optional[subprocess.Popen]
+        self._exit_code = None  # type: Optional[int]
 
-        self._stdout = None
-        self._stderr = None
+        self._stdout = None  # type: Optional[str]
+        self._stderr = None  # type: Optional[str]
 
     def _apply_quotes(self):
+        # type: () -> List[str]
+
         """
         Return options to pass to ``Popen``. Applies quotes as necessary.
         """
@@ -445,9 +513,20 @@ class Command(object):
                  else option) for option in self.executable + self.options]
 
     def _communicate_batch(self):
+        # type: () -> None
+
+        # Collapse optionals to specific types
+        assert self._process is not None
+
         self._stdout, self._stderr = self._process.communicate()
 
     def _communicate_inspect(self, inspect_callback):
+        # type: (Callable[..., None]) -> None
+
+        # Collapse optionals to specific types
+        assert self._command is not None
+        assert self._process is not None
+
         # let's capture *both* streams - capturing just a single one leads to so many ifs
         # and elses and messy code
         p_stdout = StreamReader(self._process.stdout, name='<stdout>')
@@ -506,6 +585,16 @@ class Command(object):
         self._stdout, self._stderr = p_stdout.content, p_stderr.content
 
     def _construct_output(self):
+        # type: () -> ProcessOutput
+
+        # Collapse optionals to specific types
+        assert self.logger is not None
+        assert self._command is not None
+        assert self._exit_code is not None
+        assert self._stdout is not None
+        assert self._stderr is not None
+        assert self._popen_kwargs is not None
+
         output = ProcessOutput(self._command, self._exit_code, self._stdout, self._stderr, self._popen_kwargs)
 
         output.log(self.logger)
@@ -513,6 +602,8 @@ class Command(object):
         return output
 
     def run(self, inspect=False, inspect_callback=None, **kwargs):
+        # type: (Optional[bool], Optional[Callable[..., None]], **Any) -> ProcessOutput
+
         """
         Run the command, wait for it to finish and return the output.
 
@@ -529,11 +620,13 @@ class Command(object):
         # pylint: disable=too-many-branches
 
         def _check_types(items):
+            # type: (List[str]) -> None
+
             if not isinstance(items, list):
                 raise GlueError('Only list of strings is accepted')
 
             if not all((isinstance(s, str) for s in items)):
-                raise GlueError('Only list of strings is accepted, {} found'.format([type(s) for s in items]))
+                raise GlueError('Only list of strings is accepted, {} found'.format([(s, type(s)) for s in items]))
 
         _check_types(self.executable)
         _check_types(self.options)
@@ -556,15 +649,17 @@ class Command(object):
         self._popen_kwargs = kwargs
 
         def _format_stream(stream):
+            # type: (Any) -> str
+
             if stream == subprocess.PIPE:
                 return 'PIPE'
             if stream == DEVNULL:
                 return 'DEVNULL'
             if stream == subprocess.STDOUT:
                 return 'STDOUT'
-            return stream
+            return str(stream)
 
-        printable_kwargs = kwargs.copy()
+        printable_kwargs = kwargs.copy()  # type: Dict[str, Any]
         for stream in ('stdout', 'stderr'):
             if stream in printable_kwargs:
                 printable_kwargs[stream] = _format_stream(printable_kwargs[stream])
@@ -577,6 +672,8 @@ class Command(object):
             self._process = subprocess.Popen(self._command, **self._popen_kwargs)
 
             if inspect is True:
+                assert inspect_callback is not None
+
                 self._communicate_inspect(inspect_callback)
 
             else:
@@ -599,7 +696,11 @@ class Command(object):
 
 
 @deprecated
-def run_command(cmd, logger=None, **kwargs):
+def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs):
+    # type: (List[str], Optional[ContextAdapter], Optional[bool], Optional[Callable[..., None]], **str) -> ProcessOutput
+
+    # pylint: disable=unused-argument
+
     """
     Wrapper for ``Command(...).run().
 
@@ -610,10 +711,12 @@ def run_command(cmd, logger=None, **kwargs):
         Use :py:class:`gluetool.utils.Command` instead.
     """
 
-    return Command(cmd, logger=logger).run(**kwargs)
+    return Command(cmd, logger=logger).run(**kwargs)  # type: ignore  # keyword args
 
 
 def check_for_commands(cmds):
+    # type: (List[str]) -> None
+
     """ Checks if all commands in list cmds are valid """
     for cmd in cmds:
         try:
@@ -641,10 +744,14 @@ class cached_property(object):
     """
 
     def __init__(self, method):
+        # type: (Callable[..., Any]) -> None
+
         self._method = method
         self.__doc__ = getattr(method, '__doc__')
 
     def __get__(self, obj, cls):
+        # type: (Any, Any) -> Any
+
         # does not support class attribute access, only instance
         assert obj is not None
 
@@ -658,6 +765,8 @@ class cached_property(object):
 
 
 def format_command_line(cmdline):
+    # type: (List[List[str]]) -> str
+
     """
     Return formatted command-line.
 
@@ -667,6 +776,8 @@ def format_command_line(cmdline):
     """
 
     def _format_options(options):
+        # type: (List[str]) -> str
+
         return ' '.join([pipes.quote(opt) for opt in options])
 
     cmd = [_format_options(cmdline[0])]
@@ -679,6 +790,8 @@ def format_command_line(cmdline):
 
 @deprecated
 def fetch_url(url, logger=None, success_codes=(200,)):
+    # type: (str, Optional[ContextAdapter], Tuple[int, ...]) -> Tuple[Any, str]
+
     """
     "Get me content of this URL" helper.
 
@@ -701,10 +814,9 @@ def fetch_url(url, logger=None, success_codes=(200,)):
         code, content = response.getcode(), response.read()
 
     except urllib2.HTTPError as exc:
-        logger.exception(exc)
-        raise GlueError("Failed to fetch URL '{}': {}".format(url, exc.message))
+        raise GlueError("Failed to fetch URL '{}': {}".format(url, exc))
 
-    log_blob(logger.debug, '{}: {}'.format(url, code), content)
+    log_blob(logger.debug, '{}: {}'.format(url, code), content)  # type: ignore  # logger.debug signature is compatible
 
     if code not in success_codes:
         raise GlueError("Unsuccessfull response from '{}'".format(url))
@@ -714,6 +826,8 @@ def fetch_url(url, logger=None, success_codes=(200,)):
 
 @contextlib.contextmanager
 def requests(logger=None):
+    # type: (Optional[ContextAdapter]) -> Any
+
     """
     Wrap :py:mod:`requests` with few layers providing us with the logging and better insight into
     what has been happening when ``requests`` did their job.
@@ -746,13 +860,14 @@ def requests(logger=None):
     # but it's stupid - uses "print" instead of a logger, therefore we have to capture it
     # and disable debug logging when leaving the context.
     logger = logger or Logging.get_logger()
+
     httplib_logger = PackageAdapter(logger, 'httplib')
 
     httplib.HTTPConnection.debuglevel = 1
 
     # Start capturing ``print`` statements - they are used to provide debug messages, therefore
     # using ``debug`` level.
-    with print_wrapper(log_fn=httplib_logger.debug):
+    with print_wrapper(log_fn=httplib_logger.debug):  # type: ignore  # logger.debug signature is compatible
         # To log responses and their content, we must take a look at ``Response`` instance
         # returned by several entry methods (``get``, ``post``, ...). To do that, we have
         # a simple wrapper function.
@@ -760,9 +875,12 @@ def requests(logger=None):
         # ``original_method`` is the actual ``requests.foo`` (``get``, ``post``, ...), wrapper
         # calls it to do the job, and logs response when it's done.
         def _verbose_request(original_method, *args, **kwargs):
+            # type: (Callable[..., Any], *Any, **Any) -> Any
+
             ret = original_method(*args, **kwargs)
 
-            log_blob(logger.debug, 'response content', ret.text)
+            assert logger is not None
+            log_blob(logger.debug, 'response content', ret.text)  # type: ignore  # logger.debug signature is compatible
 
             return ret
 
@@ -789,6 +907,8 @@ def requests(logger=None):
 
 
 def treat_url(url, logger=None):
+    # type: (str, Optional[ContextAdapter]) -> str
+
     """
     Remove "weird" artifacts from the given URL. Collapse adjacent '.'s, apply '..', etc.
 
@@ -817,6 +937,8 @@ def treat_url(url, logger=None):
 
 
 def render_template(template, logger=None, **kwargs):
+    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **str) -> str
+
     """
     Render Jinja2 template. Logs errors, and raises an exception when it's not possible
     to correctly render the template.
@@ -832,27 +954,25 @@ def render_template(template, logger=None, **kwargs):
     logger = logger or Logging.get_logger()
 
     try:
-        def _render(template):
-            log_blob(logger.debug, 'rendering template', template.source)
-            log_dict(logger.verbose, 'context', kwargs)
+        def _render(template, source):
+            # type: (jinja2.Template, str) -> str
+
+            assert logger is not None
+
+            log_blob(logger.debug, 'rendering template', source)  # type: ignore  # logger.debug signature is compatible
+            log_dict(logger.verbose, 'context', kwargs)  # type: ignore  # ContextAdapter *does* have `verbose`
 
             return str(template.render(**kwargs).strip())
 
         if isinstance(template, (str, unicode)):
-            source, template = template, jinja2.Template(template)
-            template.source = source
-
-            return _render(template)
+            return _render(jinja2.Template(template), template)
 
         if isinstance(template, jinja2.environment.Template):
-            if template.filename != '<template>':
-                with open(template.filename, 'r') as f:
-                    template.source = f.read()
+            if template.filename != '<template>':  # type: ignore
+                with open(template.filename, 'r') as f:  # type: ignore
+                    return _render(template, f.read())
 
-            else:
-                template.source = '<unknown template source>'
-
-            return _render(template)
+            return _render(template, '<unknown template source>')
 
         raise GlueError('Unhandled template type {}'.format(type(template)))
 
@@ -862,6 +982,8 @@ def render_template(template, logger=None, **kwargs):
 
 # pylint: disable=invalid-name
 def YAML():
+    # type: () -> ruamel.yaml.YAML
+
     """
     Provides YAML read/write interface with common settings.
 
@@ -875,6 +997,8 @@ def YAML():
 
 
 def from_yaml(yaml_string):
+    # type: (str) -> Any
+
     """
     Convert YAML in a string into Python data structures.
 
@@ -886,6 +1010,8 @@ def from_yaml(yaml_string):
 
 
 def load_yaml(filepath, logger=None):
+    # type: (str, Optional[ContextAdapter]) -> Any
+
     """
     Load data stored in YAML file, and return their Python representation.
 
@@ -921,6 +1047,8 @@ def load_yaml(filepath, logger=None):
 
 
 def dump_yaml(data, filepath, logger=None):
+    # type: (Any, str, Optional[ContextAdapter]) -> None
+
     """
     Save data stored in variable to YAML file.
 
@@ -949,6 +1077,8 @@ def dump_yaml(data, filepath, logger=None):
 
 
 def _json_byteify(data, ignore_dicts=False):
+    # type: (Any, Optional[bool]) -> Any
+
     # if this is a unicode string, return its string representation
     if isinstance(data, unicode):
         return data.encode('utf-8')
@@ -970,6 +1100,8 @@ def _json_byteify(data, ignore_dicts=False):
 
 
 def from_json(json_string):
+    # type: (str) -> Any
+
     """
     Convert JSON in a string into Python data structures.
 
@@ -981,6 +1113,8 @@ def from_json(json_string):
 
 
 def load_json(filepath, logger=None):
+    # type: (str, Optional[ContextAdapter]) -> Any
+
     """
     Load data stored in JSON file, and return their Python representation.
 
@@ -1095,9 +1229,21 @@ class SimplePatternMap(object):
         ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
+    # logging type stubs
+    # pylint: disable=not-callable
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
+
     def __init__(self, filepath, logger=None, allow_variables=False):
+        # type: (str, Optional[ContextAdapter], bool) -> None
+
         self.logger = logger or Logging.get_logger()
-        logger.connect(self)
+
+        self.logger.connect(self)
 
         pattern_map = load_yaml(filepath, logger=self.logger)
 
@@ -1106,7 +1252,7 @@ class SimplePatternMap(object):
 
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
-        self._compiled_map = []
+        self._compiled_map = []  # type: List[Tuple[Pattern, str]]
 
         for pattern_dict in pattern_map:
             if not isinstance(pattern_dict, dict):
@@ -1130,6 +1276,8 @@ class SimplePatternMap(object):
             self._compiled_map.append((pattern, result))
 
     def match(self, s):
+        # type: (str) -> str
+
         """
         Try to match ``s`` by the map. If the match is found - the first one wins - then its
         transformation is applied to the ``s``.
@@ -1208,9 +1356,21 @@ class PatternMap(object):
         ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
+    # logging type stubs
+    # pylint: disable=not-callable
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
+
     def __init__(self, filepath, spices=None, logger=None, allow_variables=False):
+        # type: (str, Optional[Dict[str, Callable[..., Callable[[Any, str], str]]]], Optional[ContextAdapter], bool) -> None
+
         self.logger = logger or Logging.get_logger()
-        logger.connect(self)
+
+        self.logger.connect(self)
 
         spices = spices or {}
 
@@ -1222,7 +1382,11 @@ class PatternMap(object):
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         def _create_simple_repl(repl):
+            # type: (str) -> Callable[[Pattern, str], str]
+
             def _replace(pattern, target):
+                # type: (Pattern, str) -> Any
+
                 """
                 Use `repl` to construct image from `target`, honoring all backreferences made by `pattern`.
                 """
@@ -1238,10 +1402,10 @@ class PatternMap(object):
 
             return _replace
 
-        self._compiled_map = []
+        self._compiled_map = []  # type: List[Tuple[Pattern, List[Callable[[Pattern, str], str]]]]
 
         for pattern_dict in pattern_map:
-            log_dict(logger.debug, 'pattern dict', pattern_dict)
+            log_dict(self.debug, 'pattern dict', pattern_dict)
 
             if not isinstance(pattern_dict, dict):
                 raise GlueError("Invalid format: '- <pattern>: <transform>' expected, '{}' found".format(pattern_dict))
@@ -1285,6 +1449,8 @@ class PatternMap(object):
             self._compiled_map.append((pattern, compiled_chains))
 
     def match(self, s, multiple=False):
+        # type: (str, bool) -> Union[str, List[str]]
+
         """
         Try to match ``s`` by the map. If the match is found - the first one wins - then its
         conversions are applied to the ``s``.
@@ -1319,6 +1485,8 @@ class PatternMap(object):
 
 
 def wait(label, check, timeout=None, tick=30, logger=None):
+    # type: (str, Callable[[], Any], Optional[int], Optional[int], Optional[ContextAdapter]) -> Any
+
     """
     Wait for a condition to be true.
 
@@ -1343,6 +1511,8 @@ def wait(label, check, timeout=None, tick=30, logger=None):
         end_time = time.time() + timeout
 
     def _timeout():
+        # type: () -> str
+
         return '{} seconds'.format(int(end_time - time.time())) if timeout is not None else 'infinite'
 
     logger.debug("waiting for condition '{}', timeout {}, check every {} seconds".format(label, _timeout(),
@@ -1364,6 +1534,8 @@ def wait(label, check, timeout=None, tick=30, logger=None):
 
 
 def new_xml_element(tag_name, _parent=None, **attrs):
+    # type: (str, Optional[Any], **Dict[str, str]) -> Any
+
     """
     Create new XML element.
 
