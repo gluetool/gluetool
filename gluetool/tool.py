@@ -3,6 +3,7 @@ Heart of the "gluetool" script. Referred to by setuptools' entry point.
 """
 
 import functools
+import logging
 import os
 import re
 import signal
@@ -21,6 +22,11 @@ from gluetool.log import log_dict
 from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
     normalize_multistring_option
 
+# Type annotations
+# pylint: disable=unused-import,wrong-import-order
+from typing import cast, Any, Callable, List, Optional, NoReturn, Union  # noqa
+from types import FrameType  # noqa
+
 
 # Order is important, the later one overrides values from the former
 DEFAULT_GLUETOOL_CONFIG_PATHS = [
@@ -33,8 +39,12 @@ DEFAULT_HANDLED_SIGNALS = (signal.SIGUSR2,)
 
 
 def handle_exc(func):
+    # type: (Callable[..., Any]) -> Callable[..., Any]
+
     @functools.wraps(func)
     def wrapped(self, *args, **kwargs):
+        # type: (Gluetool, *Any, **Any) -> Any
+
         # pylint: disable=broad-except, protected-access
 
         try:
@@ -48,29 +58,38 @@ def handle_exc(func):
 
 class Gluetool(object):
     def __init__(self):
+        # type: () -> None
+
         self.gluetool_config_paths = DEFAULT_GLUETOOL_CONFIG_PATHS
 
-        self.sentry = None
+        self.sentry = None  # type: Optional[gluetool.sentry.Sentry]
         # pylint: disable=invalid-name
-        self.Glue = None
+        self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
-        self.argv = None
-        self.pipeline_desc = None
+        self.argv = None  # type: Optional[List[str]]
+        self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStep]]
 
     @cached_property
     def _version(self):
+        # type: () -> str
+
         # pylint: disable=no-self-use
         from .version import __version__
 
-        return __version__.strip()
+        return cast(str, __version__.strip())
 
     @cached_property
     def _command_name(self):
+        # type: () -> str
+
         # pylint: disable=no-self-use
         return 'gluetool'
 
     def _deduce_pipeline_desc(self, argv, modules):
+        # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStep]
+
         # pylint: disable=no-self-use
+
         """
         Split command-line arguments, left by ``gluetool``, into a pipeline description, splitting them
         by modules and their options.
@@ -111,6 +130,8 @@ class Gluetool(object):
         return pipeline_desc
 
     def log_cmdline(self, argv, pipeline_desc):
+        # type: (List[Any], List[gluetool.glue.PipelineStep]) -> None
+
         cmdline = [
             [sys.argv[0]] + argv
         ]
@@ -118,17 +139,20 @@ class Gluetool(object):
         for step in pipeline_desc:
             cmdline.append([step.module_designation] + step.argv)
 
+        assert self.Glue is not None
         self.Glue.info('command-line:\n{}'.format(format_command_line(cmdline)))
 
     @cached_property
     def _exit_logger(self):
+        # type: () -> Union[logging.Logger, gluetool.log.ContextAdapter]
+
         # pylint: disable=no-self-use
         """
         Return logger for use when finishing the ``gluetool`` pipeline.
         """
 
         # We want to use the current logger, if there's any set up.
-        logger = gluetool.log.Logging.get_logger()
+        logger = gluetool.log.Logging.get_logger()  # type: Union[logging.Logger, gluetool.log.ContextAdapter]
 
         if logger:
             return logger
@@ -136,8 +160,6 @@ class Gluetool(object):
         # This may happen only when something went wrong during logger initialization
         # when Glue instance was created. Falling back to a very basic Logger seems
         # to be the best option here.
-
-        import logging
 
         logging.basicConfig(level=logging.DEBUG)
         logger = logging.getLogger()
@@ -147,6 +169,8 @@ class Gluetool(object):
         return logger
 
     def _quit(self, exit_status):
+        # type: (int) -> NoReturn
+
         """
         Log exit status and quit.
         """
@@ -159,6 +183,8 @@ class Gluetool(object):
 
     # pylint: disable=invalid-name
     def _cleanup(self, failure=None):
+        # type: (Optional[gluetool.glue.Failure]) -> int
+
         """
         Clear Glue pipeline by calling modules' ``destroy`` methods.
         """
@@ -178,11 +204,19 @@ class Gluetool(object):
 
     # pylint: disable=invalid-name
     def _handle_failure_core(self, failure):
+        # type: (gluetool.glue.Failure) -> NoReturn
+
         logger = self._exit_logger
 
+        assert failure.exc_info is not None
+        assert failure.exc_info[1] is not None
+
         # Handle simple 'sys.exit(0)' - no exception happened
-        if failure.exc_info[0] == SystemExit and failure.exc_info[1].code == 0:
-            self._quit(0)
+        if failure.exc_info[0] == SystemExit:
+            assert isinstance(failure.exc_info[0], SystemExit)  # collapse type to SystemExit to make mypy happy
+
+            if failure.exc_info[1].code == 0:
+                self._quit(0)
 
         # soft errors are up to users to fix, no reason to kill pipeline
         exit_status = 0 if failure.soft is True else -1
@@ -195,7 +229,8 @@ class Gluetool(object):
 
         logger.exception(msg, exc_info=failure.exc_info)
 
-        self.sentry.submit_exception(failure, logger=logger)
+        if self.sentry is not None:
+            self.sentry.submit_exception(failure, logger=logger)
 
         exit_status = min(exit_status, self._cleanup(failure=failure))
 
@@ -203,6 +238,8 @@ class Gluetool(object):
 
     # pylint: disable=invalid-name
     def _handle_failure(self, failure):
+        # type: (gluetool.glue.Failure) -> NoReturn
+
         try:
             self._handle_failure_core(failure)
 
@@ -224,7 +261,8 @@ class Gluetool(object):
 
                 # Anyway, try to submit this exception to Sentry, but be prepared for failure in case the original
                 # exception was raised right in Sentry-related code.
-                self.sentry.submit_exception(Failure(None, exc_info))
+                if self.sentry is not None:
+                    self.sentry.submit_exception(Failure(None, exc_info))
 
             # pylint: disable=broad-except
             except Exception:
@@ -243,6 +281,8 @@ class Gluetool(object):
 
     @handle_exc
     def setup(self):
+        # type: () -> None
+
         self.sentry = gluetool.sentry.Sentry()
 
         # Python installs SIGINT handler that translates signal to
@@ -252,6 +292,8 @@ class Gluetool(object):
         sigmap = {getattr(signal, name): name for name in [name for name in dir(signal) if name.startswith('SIG')]}
 
         def _signal_handler(signum, frame, handler=None, msg=None):
+            # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[str]) -> Any
+
             msg = msg or 'Signal {} received'.format(sigmap[signum])
 
             Glue.warn(msg)
@@ -260,6 +302,8 @@ class Gluetool(object):
                 return handler(signum, frame)
 
         def _sigusr1_handler(signum, frame):
+            # type: (int, FrameType) -> None
+
             # pylint: disable=unused-argument
 
             raise GlueError('Pipeline timeout expired.')
@@ -302,7 +346,10 @@ class Gluetool(object):
 
     @handle_exc
     def check_options(self):
+        # type: () -> None
+
         Glue = self.Glue
+        assert Glue is not None
 
         self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), Glue.module_list())
         log_dict(Glue.debug, 'pipeline description', self.pipeline_desc)
@@ -318,7 +365,7 @@ class Gluetool(object):
             sys.exit(0)
 
         if Glue.option('list-shared'):
-            functions = []
+            functions = []  # type: List[List[str]]
 
             for mod_name in Glue.module_list():
                 # pylint: disable=line-too-long
@@ -340,6 +387,8 @@ class Gluetool(object):
             variables = []
 
             def _add_variables(source):
+                # type: (gluetool.glue.Configurable) -> None
+
                 info = extract_eval_context_info(source)
 
                 for name, description in info.iteritems():
@@ -370,7 +419,10 @@ class Gluetool(object):
 
     @handle_exc
     def run_pipeline(self):
+        # type: () -> None
+
         Glue = self.Glue
+        assert Glue is not None
 
         # no modules
         if not self.pipeline_desc:
@@ -378,6 +430,8 @@ class Gluetool(object):
 
         # command-line info
         if Glue.option('info'):
+            assert self.argv is not None
+
             self.log_cmdline(self.argv, self.pipeline_desc)
 
         # actually the execution loop is retries+1
@@ -402,6 +456,8 @@ class Gluetool(object):
             break
 
     def main(self):
+        # type: () -> None
+
         self.setup()
         self.check_options()
         self.run_pipeline()
@@ -409,5 +465,7 @@ class Gluetool(object):
 
 
 def main():
+    # type: () -> None
+
     app = Gluetool()
     app.main()

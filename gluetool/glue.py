@@ -16,7 +16,21 @@ import jinja2
 
 from .color import Colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
-from .log import Logging, ContextAdapter, ModuleAdapter, log_dict
+from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
+
+# Type annotations
+# pylint: disable=unused-import,wrong-import-order
+from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, Sequence, \
+    Tuple, Type, Union
+from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType
+
+if TYPE_CHECKING:
+    import gluetool.color  # noqa
+    import gluetool.utils  # noqa
+
+# Type definitions
+# pylint: disable=invalid-name
+SharedType = Callable[..., Any]
 
 
 DEFAULT_MODULE_CONFIG_PATHS = [
@@ -60,10 +74,15 @@ class GlueError(Exception):
     :ivar tuple caused_by: If set, contains tuple as returned by :py:func:`sys.exc_info`, describing
         the exception that caused this one to be born. ``None`` otherwise.
     """
-    no_sentry_exceptions = []
+
+    no_sentry_exceptions = []  # type: List[str]
 
     def __init__(self, message, caused_by=None, **kwargs):
-        super(GlueError, self).__init__(message, **kwargs)
+        # type: (str, Optional[ExceptionInfoType], **Any) -> None
+
+        super(GlueError, self).__init__(**kwargs)
+
+        self.message = message
 
         # if not told explicitly, try to detect the cause
         if caused_by is None:
@@ -77,6 +96,10 @@ class GlueError(Exception):
 
     @property
     def submit_to_sentry(self):
+        # type: () -> bool
+
+        # pylint: disable=no-self-use
+
         """
         Decide whether the exception should be submitted to Sentry or not. By default,
         all exceptions are submitted. Exception listed in `no_sentry_exceptions` are not submitted.
@@ -84,6 +107,7 @@ class GlueError(Exception):
         :rtype: bool
         :returns: ``True`` when the exception should be submitted to Sentry, ``False`` otherwise.
         """
+
         exception_name = '.'.join([type(self).__module__, type(self).__name__])
         if exception_name in self.no_sentry_exceptions:
             return False
@@ -91,6 +115,8 @@ class GlueError(Exception):
         return True
 
     def sentry_fingerprint(self, current):
+        # type: (List[str]) -> List[str]
+
         # pylint: disable=no-self-use
         """
         Default grouping of events into issues might be too general for some cases.
@@ -113,6 +139,8 @@ class GlueError(Exception):
         return current
 
     def sentry_tags(self, current):
+        # type: (Dict[str, str]) -> Dict[str, str]
+
         # pylint: disable=no-self-use
         """
         Add, modify or remove tags attached to a Sentry event, reported when the exception
@@ -160,6 +188,8 @@ class GlueCommandError(GlueError):
     """
 
     def __init__(self, cmd, output, **kwargs):
+        # type: (List[str], gluetool.utils.ProcessOutput, **Any) -> None
+
         super(GlueCommandError, self).__init__("Command '{}' failed with exit code {}".format(cmd, output.exit_code),
                                                **kwargs)
 
@@ -184,11 +214,13 @@ class Failure(object):
     """
 
     def __init__(self, module, exc_info):
+        # type: (Optional[Module], ExceptionInfoType) -> None
+
         self.module = module
         self.exc_info = exc_info
 
-        self.sentry_event_id = None
-        self.sentry_event_url = None
+        self.sentry_event_id = None  # type: Optional[str]
+        self.sentry_event_url = None  # type: Optional[str]
 
         if exc_info:
             self.exception = exc_info[1]
@@ -200,6 +232,8 @@ class Failure(object):
 
 
 def retry(*args):
+    # type: (*Any) -> Any
+
     """ Retry decorator
     This decorator catches given exceptions and returns
     libRetryError exception instead.
@@ -207,12 +241,16 @@ def retry(*args):
     usage: @retry(exception1, exception2, ..)
     """
     def wrap(func):
+        # type: (Any) -> Any
+
         def func_wrapper(obj, *fargs, **fkwargs):
+            # type: (Any, *Any, **Any) -> Any
+
             try:
                 func(obj, *fargs, **fkwargs)
             except args as e:
                 if isinstance(e, GlueError):
-                    raise GlueRetryError(e.value)
+                    raise GlueRetryError(e.value)  # type: ignore
                 else:
                     raise GlueRetryError(e)
         return func_wrapper
@@ -234,15 +272,21 @@ class PipelineStep(object):
     """
 
     def __init__(self, module, actual_module=None, argv=None):
+        # type: (str, Optional[str], Optional[List[str]]) -> None
+
         self.module = module
         self.actual_module = actual_module or module
         self.argv = argv or []
 
     def __repr__(self):
+        # type: () -> str
+
         return "PipelineStep('{}', actual_module='{}', argv={})".format(self.module, self.actual_module, self.argv)
 
     @property
     def module_designation(self):
+        # type: () -> str
+
         return self.module if self.module == self.actual_module else '{}:{}'.format(self.module, self.actual_module)
 
 
@@ -256,7 +300,9 @@ class ArgumentParser(argparse.ArgumentParser):
     exception. Such action does not provide necessary information when encountered in Sentry, for example.
     """
 
-    def error(self, message):
+    def error(self, message):  # type: ignore  # incompatible with supertype because of unicode
+        # type: (str) -> None
+
         """
         Must not return - raising an exception is a good way to "not return".
 
@@ -276,7 +322,15 @@ class Configurable(object):
       configuration file.
     """
 
-    options = {}
+    # logging type stubs
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
+
+    options = {}  # type: Union[Dict[Any, Any], List[Any]]
     """
     The ``options`` variable defines options accepted by module, and their properties::
 
@@ -319,23 +373,32 @@ class Configurable(object):
     have is split into multiple smaller dictionaries, and each one is coupled with the group name in a ``tuple``.
     """
 
-    required_options = []
+    required_options = []  # type: Iterable[str]
     """Iterable of names of required options."""
 
-    options_note = None
+    options_note = None  # type: str
     """If set, it will be printed after all options as a help's epilog."""
 
     supported_dryrun_level = DryRunLevels.DEFAULT
     """Highest supported level of dry-run."""
 
-    unique_name = None
+    name = None  # type: str
     """
-    Unque name of this instance. Used by modules, has no meaning elsewhere, but since dry-run
-    checks are done on this level, it must be declared here to make pylint happy :/
+    Module name. Usually matches the name of the source file, no suffix.
+    """
+
+    unique_name = None  # type: Optional[str]
+    """
+    Unque name of this (module) instance.
+
+    Used by modules, has no meaning elsewhere, but since dry-run checks are done on this level,
+    it must be declared here to make pylint happy :/
     """
 
     @staticmethod
     def _for_each_option(callback, options):
+        # type: (Callable[..., None], Any) -> None
+
         """
         Given dictionary defining options, call a callback for each of them.
 
@@ -358,6 +421,8 @@ class Configurable(object):
 
     @staticmethod
     def _for_each_option_group(callback, options):
+        # type: (Callable[..., None], Any) -> None
+
         """
         Given set of options, call a callback for each option group.
 
@@ -380,16 +445,22 @@ class Configurable(object):
                     callback(group_options, group_name=group_name)
 
     def __init__(self):
+        # type: () -> None
+
         super(Configurable, self).__init__()
 
         # Initialize configuration store
-        self._config = {}
+        self._config = {}  # type: Dict[str, Any]
 
         # Initialize values in the store, and make sanity check of option names
         def _fail_name(name):
+            # type: (str) -> None
+
             raise GlueError("Option name must be either a string or (<letter>, <string>), '{}' found".format(name))
 
         def _verify_option(name, names, params):
+            # type: (str, List[str], Dict[str, Any]) -> None
+
             if isinstance(names, str):
                 self._config[name] = None
 
@@ -413,6 +484,8 @@ class Configurable(object):
             params['help'] = option_help(params['help'])
 
         def _verify_options(options, **kwargs):
+            # type: (Dict[str, Dict[str, Any]], **Any) -> None
+
             # pylint: disable=unused-argument
 
             Configurable._for_each_option(_verify_option, options)
@@ -420,6 +493,8 @@ class Configurable(object):
         Configurable._for_each_option_group(_verify_options, self.options)
 
     def _parse_config(self, paths):
+        # type: (List[str]) -> None
+
         """
         Parse configuration files. Uses :py:mod:`ConfigParser` for the actual parsing.
         Updates module's configuration store with values found returned by the parser.
@@ -435,6 +510,8 @@ class Configurable(object):
         log_dict(self.debug, 'Read configuration files', parsed_paths)
 
         def _inject_value(name, names, params):
+            # type: (str, Tuple[str, ...], Dict[str, Any]) -> None
+
             # pylint: disable=unused-argument
 
             try:
@@ -455,6 +532,8 @@ class Configurable(object):
             self.debug("Option '{}' set to '{}' by config file".format(name, value))
 
         def _inject_values(options, **kwargs):
+            # type: (Any, **Any) -> None
+
             # pylint: disable=unused-argument
 
             Configurable._for_each_option(_inject_value, options)
@@ -463,6 +542,8 @@ class Configurable(object):
 
     @classmethod
     def _create_args_parser(cls, **kwargs):
+        # type: (**Any) -> ArgumentParser
+
         """
         Create an argument parser. Used by Sphinx to document "command-line" options
         of the module - which are, by the way, the module options as well.
@@ -473,8 +554,10 @@ class Configurable(object):
         root_parser = ArgumentParser(**kwargs)
 
         def _add_option(parser, name, names, params):
+            # type: (ArgumentParser, str, Tuple[str, ...], Dict[str, Any]) -> None
+
             if params.get('raw', False) is True:
-                final_names = (name,)
+                final_names = (name,)  # type: Tuple[str, ...]
                 del params['raw']
 
             else:
@@ -487,11 +570,17 @@ class Configurable(object):
             parser.add_argument(*final_names, **params)
 
         def _add_options(group_options, group_name=None):
+            # type: (Any, Optional[str]) -> None
+
+            group_parser = None  # type: Optional[Union[argparse.ArgumentParser, argparse._ArgumentGroup]]
+
             if group_name is None:
                 group_parser = root_parser
 
             else:
                 group_parser = root_parser.add_argument_group(group_name)
+
+            assert group_parser is not None
 
             Configurable._for_each_option(partial(_add_option, group_parser), group_options)
 
@@ -500,6 +589,8 @@ class Configurable(object):
         return root_parser
 
     def _parse_args(self, args, **kwargs):
+        # type: (Any, **Any) -> None
+
         """
         Parse command-line arguments. Uses :py:mod:`argparse` for the actual parsing.
         Updates module's configuration store with values returned by parser.
@@ -518,6 +609,8 @@ class Configurable(object):
 
         # add the parsed args to options
         def _inject_value(name, names, params):
+            # type: (str, Tuple[str, ...], Dict[str, Any]) -> None
+
             # pylint: disable=unused-argument
 
             dest = params.get('dest', name.replace('-', '_'))
@@ -546,6 +639,8 @@ class Configurable(object):
             self.debug("Option '{}' set to '{}' by command-line".format(name, value))
 
         def _inject_values(options, **kwargs):
+            # type: (Any, **Any) -> None
+
             # pylint: disable=unused-argument
 
             Configurable._for_each_option(_inject_value, options)
@@ -553,6 +648,8 @@ class Configurable(object):
         Configurable._for_each_option_group(_inject_values, self.options)
 
     def parse_config(self):
+        # type: () -> None
+
         """
         Public entry point to configuration parsing. Child classes must implement this
         method, e.g. by calling :py:meth:`gluetool.glue.Configurable._parse_config` which
@@ -564,6 +661,8 @@ class Configurable(object):
         raise NotImplementedError('Implement this method to enable the actual parsing')
 
     def parse_args(self, args):
+        # type: (List[str]) -> None
+
         """
         Public entry point to argument parsing. Child classes must implement this method,
         e.g. by calling :py:meth:`gluetool.glue.Configurable._parse_args` which makes use
@@ -575,6 +674,8 @@ class Configurable(object):
         raise NotImplementedError('Implement this method to enable the actual parsing')
 
     def check_required_options(self):
+        # type: () -> None
+
         if not self.required_options:
             self.debug('skipping checking of required options')
             return
@@ -583,7 +684,21 @@ class Configurable(object):
             if name not in self._config or not self._config[name]:
                 raise GlueError("Missing required '{}' option".format(name))
 
+    # pylint: disable=function-redefined
+
+    @overload
+    def option(self, name):
+        # type: (str) -> Any
+
+        pass
+
+    @overload
     def option(self, *names):
+        # type: (*str) -> List[Any]
+
+        pass
+
+    def option(self, *names): # type: ignore
         """
         Return values of given options from module's configuration store.
 
@@ -603,6 +718,8 @@ class Configurable(object):
 
     @property
     def dryrun_level(self):
+        # type: () -> int
+
         """
         Return current dry-run level. This must be implemented by class descendants
         because each one finds the necessary information in different places.
@@ -612,6 +729,8 @@ class Configurable(object):
 
     @property
     def dryrun_enabled(self):
+        # type: () -> bool
+
         """
         ``True`` if dry-run level is enabled, on any level.
         """
@@ -619,6 +738,8 @@ class Configurable(object):
         return self.dryrun_level != DryRunLevels.DEFAULT
 
     def _dryrun_allows(self, threshold, msg):
+        # type: (int, str) -> bool
+
         """
         Check whether current dry-run level allows an action. If the current dry-run level
         is equal of higher than ``threshold``, then the action is not allowed.
@@ -638,6 +759,8 @@ class Configurable(object):
         return True
 
     def dryrun_allows(self, msg):
+        # type: (str) -> bool
+
         """
         Checks whether current dry-run level allows an action which is disallowed on
         :py:attr:`DryRunLevels.DRY` level.
@@ -648,6 +771,8 @@ class Configurable(object):
         return self._dryrun_allows(DryRunLevels.DRY, msg)
 
     def isolatedrun_allows(self, msg):
+        # type: (str) -> bool
+
         """
         Checks whether current dry-run level allows an action which is disallowed on
         :py:attr:`DryRunLevels.ISOLATED` level.
@@ -656,6 +781,8 @@ class Configurable(object):
         return self._dryrun_allows(DryRunLevels.ISOLATED, msg)
 
     def check_dryrun(self):
+        # type: () -> None
+
         """
         Checks whether this object supports current dry-run level.
         """
@@ -664,11 +791,13 @@ class Configurable(object):
             return
 
         if self.dryrun_level > self.supported_dryrun_level:
-            raise GlueError("Module '{}' does not support current dry-run level of '{}'".format(self.unique_name,
-                                                                                                self.dryrun_level.name))
+            dryrun_level_name = self.dryrun_level.name  # type: ignore  # `dryrun_level` is not pure int but Enum
+            raise GlueError("Module '{}' does not support current dry-run level of '{}'".format(self.unique_name, dryrun_level_name))
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Any]
+
         """
         Return "evaluation context" - a dictionary of variable names (usually in uppercase)
         and their values, which is supposed to be used in various "evaluate *this*" operations
@@ -718,25 +847,36 @@ class Module(Configurable):
         shared functions, when one calls another, implementing the same operation.
     """
 
-    name = None
-    """Module name. Usually matches the name of the source file, no suffix."""
+    # logging type stubs
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
 
-    description = None
+    description = None  # type: str
     """Short module description, displayed in ``gluetool``'s module listing."""
 
-    shared_functions = []
+    shared_functions = []  # type: List[str]
     """Iterable of names of shared functions exported by the module."""
 
     def _paths_with_module(self, roots):
+        # type: (List[str]) -> List[str]
+
         """
         Return paths cretaed by joining roots with module's unique name.
 
         :param list(str) roots: List of root directories.
         """
 
+        assert self.unique_name is not None
+
         return [os.path.join(root, self.unique_name) for root in roots]
 
     def __init__(self, glue, name):
+        # type: (Glue, str) -> None
+
         super(Module, self).__init__()
 
         # we need to save the unique name in case there are more aliases available
@@ -762,16 +902,22 @@ class Module(Configurable):
         else:
             self.debug('no data file found')
 
-        self._overloaded_shared_functions = {}
+        self._overloaded_shared_functions = {}  # type: Dict[str, SharedType]
 
     @property
     def dryrun_level(self):
+        # type: () -> int
+
         return self.glue.dryrun_level
 
     def parse_config(self):
+        # type: () -> None
+
         self._parse_config(self._paths_with_module(self.glue.module_config_paths))
 
     def _generate_shared_functions_help(self):
+        # type: () -> str
+
         """
         Generate help for shared functions provided by the module.
 
@@ -795,9 +941,11 @@ class Module(Configurable):
         {{ '** Shared functions **' | style(fg='yellow') }}
 
         {{ FUNCTIONS }}
-        """)).render(FUNCTIONS=functions_help(functions))
+        """)).render(FUNCTIONS=functions_help(functions)).encode('ascii')
 
     def parse_args(self, args):
+        # type: (Any) -> None
+
         epilog = [
             '' if self.options_note is None else docstring_to_help(self.options_note),
             self._generate_shared_functions_help(),
@@ -806,11 +954,13 @@ class Module(Configurable):
 
         self._parse_args(args,
                          usage='{} [options]'.format(Colors.style(self.unique_name, fg='cyan')),
-                         description=docstring_to_help(self.__doc__),
+                         description=docstring_to_help(self.__doc__ or ''),
                          epilog='\n'.join(epilog).strip(),
                          formatter_class=LineWrapRawTextHelpFormatter)
 
     def destroy(self, failure=None):
+        # type: (Optional[Failure]) -> None
+
         # pylint: disable-msg=no-self-use,unused-argument
         """
         Here should go any code that needs to be run on exit, like job cleanup etc.
@@ -823,6 +973,8 @@ class Module(Configurable):
         return None
 
     def add_shared(self):
+        # type: () -> None
+
         """
         Register module's shared functions with Glue, to allow other modules
         to use them.
@@ -830,23 +982,36 @@ class Module(Configurable):
 
         for funcname in self.shared_functions:
             if self.has_shared(funcname):
-                self._overloaded_shared_functions[funcname] = self.get_shared(funcname)
+                original_shared = self.get_shared(funcname)
+                assert original_shared is not None
+
+                self._overloaded_shared_functions[funcname] = original_shared
 
             self.glue.add_shared(funcname, self)
 
     def del_shared(self, funcname):
+        # type: (str) -> None
+
         self.glue.del_shared(funcname)
 
     def has_shared(self, funcname):
+        # type: (str) -> bool
+
         return self.glue.has_shared(funcname)
 
     def require_shared(self, *names, **kwargs):
+        # type: (*str, **str) -> bool
+
         return self.glue.require_shared(*names, **kwargs)
 
     def get_shared(self, funcname):
+        # type: (str) -> Optional[SharedType]
+
         return self.glue.get_shared(funcname)
 
     def execute(self):
+        # type: () -> None
+
         # pylint: disable-msg=no-self-use
         """
         In this method, modules can perform any work they deemed necessary for
@@ -857,6 +1022,8 @@ class Module(Configurable):
         """
 
     def sanity(self):
+        # type: () -> None
+
         # pylint: disable-msg=no-self-use
         """
         In this method, modules can define additional checks before execution.
@@ -870,9 +1037,13 @@ class Module(Configurable):
         """
 
     def shared(self, *args, **kwargs):
+        # type: (*Any, **Any) -> Any
+
         return self.glue.shared(*args, **kwargs)
 
     def overloaded_shared(self, funcname, *args, **kwargs):
+        # type: (str, *Any, **Any) -> Any
+
         """
         Call a shared function overloaded by the one provided by this module. This way,
         a module can give chance to other implementations of its action, e.g. to publish
@@ -887,6 +1058,8 @@ class Module(Configurable):
         return self._overloaded_shared_functions[funcname](*args, **kwargs)
 
     def run_module(self, module, args=None):
+        # type: (str, Optional[List[str]]) -> None
+
         self.glue.run_module(module, args or [])
 
 
@@ -900,6 +1073,13 @@ class Glue(Configurable):
         Some functionality may need it to gain access to bits like its command-name.
     :param gluetool.sentry.Sentry sentry: If set, it provides interface to Sentry.
     """
+    # logging type stubs
+    verbose = None  # type: LoggingFunctionType
+    debug = None  # type: LoggingFunctionType
+    info = None  # type: LoggingFunctionType
+    warn = None  # type: LoggingWarningFunctionType
+    error = None  # type: LoggingFunctionType
+    exception = None  # type: LoggingFunctionType
 
     name = 'gluetool core'
 
@@ -1028,6 +1208,8 @@ class Glue(Configurable):
 
     @property
     def module_paths(self):
+        # type: () -> List[str]
+
         """
         List of paths in which modules reside.
         """
@@ -1037,6 +1219,8 @@ class Glue(Configurable):
 
     @property
     def module_data_paths(self):
+        # type: () -> List[str]
+
         """
         List of paths in which module data files reside.
         """
@@ -1046,6 +1230,8 @@ class Glue(Configurable):
 
     @property
     def module_config_paths(self):
+        # type: () -> List[str]
+
         """
         List of paths in which module config files reside.
         """
@@ -1055,6 +1241,8 @@ class Glue(Configurable):
 
     # pylint: disable=method-hidden
     def sentry_submit_exception(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         """
         Submits exceptions to the Sentry server. Does nothing by default, unless this instance
         is initialized with a :py:class:`gluetool.sentry.Sentry` instance which actually does
@@ -1065,6 +1253,8 @@ class Glue(Configurable):
 
     # pylint: disable=method-hidden
     def sentry_submit_warning(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         """
         Submits warnings to the Sentry server. Does nothing by default, unless this instance
         is initialized with a :py:class:`gluetool.sentry.Sentry` instance which actually does
@@ -1074,6 +1264,8 @@ class Glue(Configurable):
         """
 
     def _add_shared(self, funcname, module, func):
+        # type: (str, Configurable, SharedType) -> None
+
         """
         Register a shared function. Overwrite previously registered function
         with the same name, if there was any such.
@@ -1090,6 +1282,8 @@ class Glue(Configurable):
         self.shared_functions[funcname] = (module, func)
 
     def add_shared(self, funcname, module):
+        # type: (str, Module) -> None
+
         """
         Register a shared function. Overwrite previously registered function
         with the same name, if there was any such.
@@ -1105,18 +1299,26 @@ class Glue(Configurable):
 
     # delete a shared function if exists
     def del_shared(self, funcname):
+        # type: (str) -> None
+
         if funcname not in self.shared_functions:
             return
 
         del self.shared_functions[funcname]
 
     def has_shared(self, funcname):
+        # type: (str) -> bool
+
         return funcname in self.shared_functions
 
     def require_shared(self, *names, **kwargs):
+        # type: (*str, **str) -> bool
+
         warn_only = kwargs.get('warn_only', False)
 
         def _check(name):
+            # type: (str) -> bool
+
             if self.has_shared(name):
                 return True
 
@@ -1132,12 +1334,16 @@ class Glue(Configurable):
         return all([_check(name) for name in names])
 
     def get_shared(self, funcname):
+        # type: (str) -> Optional[SharedType]
+
         if not self.has_shared(funcname):
             return None
 
         return self.shared_functions[funcname][1]
 
     def shared(self, funcname, *args, **kwargs):
+        # type: (str, *Any, **Any) -> Any
+
         if funcname not in self.shared_functions:
             return None
 
@@ -1145,6 +1351,8 @@ class Glue(Configurable):
 
     @property
     def eval_context(self):
+        # type: () -> Dict[str, Any]
+
         """
         Returns "global" evaluation context - some variables that are nice to have in all contexts.
         """
@@ -1159,6 +1367,8 @@ class Glue(Configurable):
         }
 
     def _eval_context_module_caller(self):
+        # type: () -> Optional[Module]
+
         """
         Infere module instance calling the eval context shared function.
 
@@ -1186,9 +1396,11 @@ class Glue(Configurable):
             self.warn('Cannot infer calling module of eval_context')
             return None
 
-        return stack[3][0].f_locals['self']
+        return cast(Module, stack[3][0].f_locals['self'])
 
     def _eval_context(self):
+        # type: () -> Dict[str, Any]
+
         """
         Gather contexts of all modules in a pipeline and merge them together.
 
@@ -1208,7 +1420,7 @@ class Glue(Configurable):
         }
 
         # first "module" is this instance - it provides eval_context as well.
-        for module in [self] + self._module_instances:
+        for module in [self] + self._module_instances:  # type: ignore  # types are compatible
             # cache the context for logging
             module_context = module.eval_context
 
@@ -1222,6 +1434,8 @@ class Glue(Configurable):
     # Module loading
     #
     def _check_module_file(self, mfile):
+        # type: (str) -> bool
+
         """
         Make sure the file looks like a ``gluetool`` module:
 
@@ -1242,12 +1456,16 @@ class Glue(Configurable):
 
             # check for gluetool import
             def imports_gluetool(item):
+                # type: (Any) -> bool
+
                 """
                 Return ``True`` if item is an ``import`` statement, and imports ``gluetool``.
                 """
 
-                return (item.__class__.__name__ == 'Import' and item.names[0].name == 'gluetool') \
-                    or (item.__class__.__name__ == 'ImportFrom' and item.module == 'gluetool')
+                class_name = item.__class__.__name__
+
+                return cast(bool, (class_name == 'Import' and item.names[0].name == 'gluetool') \
+                                   or (class_name == 'ImportFrom' and item.module == 'gluetool'))
 
             if not any((imports_gluetool(item) for item in node.__dict__['body'])):
                 self.debug("  no 'import gluetool' found")
@@ -1255,6 +1473,8 @@ class Glue(Configurable):
 
             # check for gluetool.Module class definition
             def has_module_class(item):
+                # type: (Any) -> bool
+
                 """
                 Return ``True`` if item is a class definition, and any of the base classes
                 is gluetool.glue.Module.
@@ -1281,6 +1501,8 @@ class Glue(Configurable):
             raise GlueError("Unable to check check module file '{}': {}".format(mfile, str(e)))
 
     def _import_module(self, import_name, filename):
+        # type: (str, str) -> Any
+
         """
         Attempt to import a Python module from a file.
 
@@ -1300,6 +1522,8 @@ class Glue(Configurable):
             raise GlueError("Unable to import module '{}' from '{}': {}".format(import_name, filename, str(e)))
 
     def _load_python_module(self, group, module_name, filepath):
+        # type: (str, str, str) -> Any
+
         """
         Load Python module from a file, if it contains ``gluetool`` modules. If the
         file does not look like it contains ``gluetool`` modules, or when it's not
@@ -1334,6 +1558,8 @@ class Glue(Configurable):
         return module
 
     def _load_gluetool_modules(self, group, module_name, filepath):
+        # type: (str, str, str) -> List[Tuple[str, Type[Module]]]
+
         """
         Load ``gluetool`` modules from a file. Method attempts to import the file
         as a Python module, and then checks its content and adds all `gluetool`
@@ -1348,7 +1574,7 @@ class Glue(Configurable):
 
         module = self._load_python_module(group, module_name, filepath)
 
-        loaded_modules = []
+        loaded_modules = []  # type: List[Tuple[str, Type[Any]]]
 
         # Look for gluetool modules in imported stuff, and add them to our module registry
         for name in dir(module):
@@ -1356,6 +1582,8 @@ class Glue(Configurable):
 
             if not isinstance(cls, type) or not issubclass(cls, Module) or cls == Module:
                 continue
+
+            assert isinstance(cls, Module)
 
             if not hasattr(cls, 'name') or not cls.name:
                 raise GlueError("No name specified by module class '{}' from file '{}'".format(
@@ -1387,6 +1615,8 @@ class Glue(Configurable):
         return loaded_modules
 
     def _load_module_path(self, ppath):
+        # type: (str) -> None
+
         """
         Search and load ``gluetool`` modules from a directory.
 
@@ -1408,6 +1638,8 @@ class Glue(Configurable):
                 self._load_gluetool_modules(group, module_name, module_file)
 
     def load_modules(self):
+        # type: () -> None
+
         """
         Load all available `gluetool` modules.
         """
@@ -1418,6 +1650,8 @@ class Glue(Configurable):
             self._load_module_path(path)
 
     def __init__(self, tool=None, sentry=None):
+        # type: (Optional[Any], Optional[Any]) -> None
+
         # Initialize logging methods before doing anything else.
         # Right now, we don't know the desired log level, or if
         # output file is in play, just get simple logger before
@@ -1425,8 +1659,8 @@ class Glue(Configurable):
         self._sentry = sentry
 
         if sentry is not None:
-            self.sentry_submit_exception = sentry.submit_exception
-            self.sentry_submit_warning = sentry.submit_warning
+            self.sentry_submit_exception = sentry.submit_exception  # type: ignore
+            self.sentry_submit_warning = sentry.submit_warning  # type: ignore
 
         logger = Logging.create_logger(sentry=sentry, sentry_submit_warning=self.sentry_submit_warning)
 
@@ -1439,25 +1673,29 @@ class Glue(Configurable):
 
         self._dryrun_level = DryRunLevels.DEFAULT
 
-        self.current_module = None
+        self.current_module = None  # type: Optional[Module]
 
         # module types dictionary
-        self.modules = {}
+        self.modules = {}  # type: Dict[str, Dict[str, Any]]
 
         # Materialized pipeline
-        self._module_instances = []
+        self._module_instances = []  # type: List[Configurable]
 
         #: Shared function registry.
         #: funcname: (module, fn)
-        self.shared_functions = {}
+        self.shared_functions = {}  # type: Dict[str, Tuple[Configurable, SharedType]]
 
         self._add_shared('eval_context', self, self._eval_context)
 
     # pylint: disable=arguments-differ
-    def parse_config(self, paths):
+    def parse_config(self, paths):  # type: ignore  # signature differs on purpose
+        # type: (List[str]) -> None
+
         self._parse_config(paths)
 
     def parse_args(self, args):
+        # type: (Any) -> None
+
         module_dirs = '\n'.join(['        - {}'.format(directory) for directory in DEFAULT_MODULE_PATHS])
         data_dirs = '\n'.join(['        - {}'.format(directory) for directory in [DEFAULT_DATA_PATH]])
         module_config_dirs = '\n'.join(['        - {}'.format(directory) for directory in DEFAULT_MODULE_CONFIG_PATHS])
@@ -1483,7 +1721,7 @@ class Glue(Configurable):
 
         # re-create logger - now we have all necessary configuration
         if self.option('verbose'):
-            level = logging.VERBOSE
+            level = VERBOSE
 
         elif self.option('debug'):
             level = logging.DEBUG
@@ -1493,9 +1731,6 @@ class Glue(Configurable):
 
         else:
             level = logging.INFO
-
-        import gluetool.color
-        import gluetool.utils
 
         # enable global color support
         gluetool.color.switch(gluetool.utils.normalize_bool_option(self.option('colors')))
@@ -1532,15 +1767,21 @@ class Glue(Configurable):
 
     @property
     def dryrun_level(self):
+        # type: () -> int
+
         return self._dryrun_level
 
     def _for_each_module(self, modules, callback, *args, **kwargs):
+        # type: (Iterable[Module], Callable[..., None], *Any, **Any) -> None
+
         for module in modules:
             self.current_module = module
 
             callback(module, *args, **kwargs)
 
     def destroy_modules(self, failure=None):
+        # type: (Optional[Failure]) -> Any
+
         if not self._module_instances:
             return
 
@@ -1548,6 +1789,8 @@ class Glue(Configurable):
         self.debug('destroying all modules in reverse order')
 
         def _destroy(module):
+            # type: (Module) -> None
+
             try:
                 module.debug('destroying myself')
                 module.destroy(failure=failure)
@@ -1557,17 +1800,17 @@ class Glue(Configurable):
                 destroy_failure = Failure(module=module, exc_info=sys.exc_info())
 
                 msg = "Exception raised while destroying module '{}': {}".format(module.unique_name, exc.message)
-                self.exception(msg, exc_info=destroy_failure.exc_info)
+                self.error(msg, exc_info=destroy_failure.exc_info)
                 self.sentry_submit_exception(destroy_failure, logger=self.logger)
 
-                return destroy_failure
-
-        self._for_each_module(reversed(self._module_instances), _destroy)
+        self._for_each_module(reversed(cast(Sequence[Module], self._module_instances)), _destroy)
 
         self.current_module = None
         self._module_instances = []
 
     def init_module(self, module_name, actual_module_name=None):
+        # type: (str, Optional[str]) -> Module
+
         """
         Given a name of the module, create its instance and give it a name.
 
@@ -1580,10 +1823,13 @@ class Glue(Configurable):
         """
 
         actual_module_name = actual_module_name or module_name
+        klass = self.modules[actual_module_name]['class']  # type: Type[Module]
 
-        return self.modules[actual_module_name]['class'](self, module_name)
+        return klass(self, module_name)
 
     def run_modules(self, pipeline_desc, register=False):
+        # type: (List[PipelineStep], Optional[bool]) -> None
+
         """
         Run a pipeline, consisting of multiple modules.
 
@@ -1608,12 +1854,16 @@ class Glue(Configurable):
             module.check_dryrun()
 
         def _sanity(module):
+            # type: (Module) -> None
+
             module.sanity()
             module.check_required_options()
 
         self._for_each_module(modules, _sanity)
 
         def _execute(module):
+            # type: (Module) -> None
+
             # We want to register module's shared function no matter how its ``execute``
             # finished or crashed. We could use ``try``-``finally`` and call add_shared there
             # but should there be an exception under ``try`` *and* should there be another
@@ -1640,6 +1890,8 @@ class Glue(Configurable):
         self.current_module = None
 
     def run_module(self, module_name, module_argv=None, actual_module_name=None, register=False):
+        # type: (str, Optional[List[str]], Optional[str], Optional[bool]) -> Any
+
         """
         Syntax sugar for :py:meth:`run_modules`, in the case you want to run just a one-shot module.
 
@@ -1659,9 +1911,13 @@ class Glue(Configurable):
         return self.run_modules([step], register=register)
 
     def module_list(self):
+        # type: () -> List[str]
+
         return sorted(self.modules)
 
     def module_list_usage(self, groups):
+        # type: (List[str]) -> str
+
         """ Returns a string with modules description """
 
         if groups:
@@ -1692,8 +1948,11 @@ class Glue(Configurable):
         return '\n'.join(usage)
 
     def module_group_list(self):
+        # type: () -> Dict[str, Dict[str, str]]
+
         """ Returns a dictionary of groups of modules with description """
-        module_groups = {}
+        module_groups = {}  # type: Dict[str, Dict[str, str]]
+
         for module in self.module_list():
             group = self.modules[module]['group']
             try:

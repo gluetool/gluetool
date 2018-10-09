@@ -22,4 +22,5 @@ docs/source/gluetool.*
 *.retry
 
 .hypothesis
+.mypy_cache
 .pytest_cache
