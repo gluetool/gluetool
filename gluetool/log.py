@@ -347,7 +347,9 @@ def log_dict(writer, intro, data):
     :param str blob: The actual data to log.
     """
 
-    writer('{}:\n{}'.format(intro, format_dict(data)))
+    writer('{}:\n{}'.format(intro, format_dict(data)), extra={
+        'raw-struct': data
+    })
 
 
 def log_blob(writer, intro, blob):
@@ -366,7 +368,9 @@ def log_blob(writer, intro, blob):
     :param str blob: The actual blob of text.
     """
 
-    writer("{}:\n{}".format(intro, format_blob(blob)))
+    writer("{}:\n{}".format(intro, format_blob(blob)), extra={
+        'raw-blob': blob
+    })
 
 
 def log_xml(writer, intro, element):
@@ -378,7 +382,32 @@ def log_xml(writer, intro, element):
     :param element: XML element to log.
     """
 
-    writer("{}:\n{}".format(intro, format_xml(element)))
+    writer("{}:\n{}".format(intro, format_xml(element)), extra={
+        'raw-xml': element
+    })
+
+
+# pylint: disable=invalid-name
+def _extract_stack(tb):
+    """
+    Construct a "stack" by merging two sources of data:
+
+    1. what's provided by ``traceback.extract_tb()``, i.e. ``(filename, lineno, fnname, text)``;
+    2. stack frame objects, hidden inside traceback object and available via iteration.
+
+    :rtype: list(list(str, int, str, str, frame))
+    """
+
+    stack = []
+
+    extracted_tb = traceback.extract_tb(tb)
+
+    trace_iter = tb
+    while trace_iter:
+        stack.append(list(extracted_tb.pop(0)) + [trace_iter.tb_frame])
+        trace_iter = trace_iter.tb_next
+
+    return stack
 
 
 class SingleLogLevelFileHandler(logging.FileHandler):
@@ -520,17 +549,7 @@ class LoggingFormatter(logging.Formatter):
         output = ['']
 
         def _add_block(label, exc, trace):
-            # construct a "stack" by merging two sources of data
-            # 1) what's provided by traceback.extract_tb(), i.e. (filename, lineno, fnname, text),
-            # 2) stack frame objects, hidden inside traceback object and available via iteration
-            stack = []
-
-            extracted_tb = traceback.extract_tb(trace)
-
-            trace_iter = trace
-            while trace_iter:
-                stack.append(list(extracted_tb.pop(0)) + [trace_iter.tb_frame])
-                trace_iter = trace_iter.tb_next
+            stack = _extract_stack(trace)
 
             output.append(tmpl.render(label=label, exception=exc, stack=stack))
 
@@ -605,6 +624,72 @@ class LoggingFormatter(logging.Formatter):
         return msg
 
 
+class JSONLoggingFormatter(logging.Formatter):
+    """
+    Custom logging formatter producing a JSON dictionary describing the log record.
+    """
+
+    def __init__(self, **kwargs):
+        # pylint: disable=unused-argument
+
+        super(JSONLoggingFormatter, self).__init__()
+
+    def format(self, record):
+        # Construct a huuuuge dictionary describing the event
+        serialized = {
+            field: getattr(record, field, None)
+            for field in (
+                # LogRecord properties
+                'args', 'created', 'exc_info', 'exc_text', 'filename', 'funcName', 'levelname', 'levelno',
+                'lineno', 'module', 'msecs', 'msg', 'name', 'pathname', 'process', 'processName',
+                'relativeCreated', 'thread', 'threadName',
+                # our custom fields
+                'raw-blob', 'raw-struct', 'raw-xml'
+            )
+        }
+
+        serialized['message'] = record.getMessage()
+
+        if record.exc_info:
+            serialized['caused_by'] = []
+
+            exc_info = record.exc_info
+
+            # pylint: disable=invalid-name
+            def _add_cause(exc, tb):
+                exc_class = exc.__class__
+
+                stack = _extract_stack(tb)
+
+                serialized['caused_by'].append({
+                    'exception': {
+                        'class': '{}.{}'.format(exc_class.__module__, exc_class.__name__),
+                        'message': exc.message
+                    },
+                    'traceback': [
+                        {
+                            'filename': filename,
+                            'lineno': lineno,
+                            'fnname': fnname,
+                            'text': text,
+                            'locals': frame.f_locals
+                        }
+                        for filename, lineno, fnname, text, frame in stack
+                    ]
+                })
+
+            # don't unpack traceback - it might lead to a circular reference, leaving this frame
+            # uncollectable
+            _add_cause(exc_info[1], exc_info[2])
+
+            while getattr(exc_info[1], 'caused_by', None) is not None:
+                exc_info = exc_info[1].caused_by
+
+                _add_cause(exc_info[1], exc_info[2])
+
+        return format_dict(serialized)
+
+
 class Logging(object):
     """
     Container wrapping configuration and access to :py:mod:`logging` infrastructure ``gluetool``
@@ -620,6 +705,7 @@ class Logging(object):
 
     debug_file_handler = None
     verbose_file_handler = None
+    json_file_handler = None
 
     @staticmethod
     def get_logger():
@@ -683,13 +769,20 @@ class Logging(object):
 
         logger.addHandler(Logging.verbose_file_handler)
 
+    @staticmethod
+    def enable_json_file(logger):
+        if not Logging.json_file_handler:
+            return
+
+        logger.addHandler(Logging.json_file_handler)
+
     OUR_LOGGERS = (
         logging.getLogger('gluetool'),
         logging.getLogger('urllib3')
     )
 
     @staticmethod
-    def _setup_log_file(filepath, level, limit_level=False):
+    def _setup_log_file(filepath, level, limit_level=False, formatter=LoggingFormatter):
         if filepath is None:
             return None
 
@@ -701,14 +794,18 @@ class Logging(object):
 
         handler.setLevel(level)
 
-        formatter = LoggingFormatter(colors=False, log_tracebacks=True)
+        formatter = formatter(colors=False, log_tracebacks=True)
         handler.setFormatter(formatter)
 
         def _close_log_file():
-            Logging.get_logger().debug("closing output file '{}'".format(filepath))
+            logger = Logging.get_logger()
+
+            logger.debug("closing output file '{}'".format(filepath))
 
             handler.flush()
             handler.close()
+
+            logger.removeHandler(handler)
 
         atexit.register(_close_log_file)
 
@@ -719,7 +816,7 @@ class Logging(object):
     # pylint: disable=too-many-arguments
     @staticmethod
     def create_logger(level=DEFAULT_LOG_LEVEL,
-                      debug_file=None, verbose_file=None,
+                      debug_file=None, verbose_file=None, json_file=None,
                       sentry=None, sentry_submit_warning=None,
                       show_traceback=False):
         """
@@ -737,6 +834,8 @@ class Logging(object):
             messages of at least ``DEBUG`` level into this this file.
         :param str verbose_file: if set, new handler will be attached to the logger, streaming
             messages of ``VERBOSE`` log levels into this this file.
+        :param str json_file: if set, all logging messages are sent to this file in a form
+            of JSON structures.
         :param int level: desired log level. One of constants defined in :py:mod:`logging` module,
             e.g. :py:data:`logging.DEBUG` or :py:data:`logging.ERROR`.
         :param bool sentry: if set, logger will be augmented to send every log message to the Sentry
@@ -760,13 +859,15 @@ class Logging(object):
             # configure it and attach it to correct places
             Logging.stderr_handler = logging.StreamHandler()
             Logging.stderr_handler.setLevel(level)
-            Logging.stderr_handler.setFormatter(LoggingFormatter())
 
             # create our main logger
             Logging.logger = logging.getLogger('gluetool')
 
             # setup all loggers we're interested in
             map(Logging.configure_logger, Logging.OUR_LOGGERS)
+
+        # set formatter
+        Logging.stderr_handler.setFormatter(LoggingFormatter())
 
         # set log level to new value
         Logging.stderr_handler.setLevel(level)
@@ -777,6 +878,7 @@ class Logging(object):
         # create debug and verbose files
         Logging.debug_file_handler = Logging._setup_log_file(debug_file, logging.DEBUG)
         Logging.verbose_file_handler = Logging._setup_log_file(verbose_file, logging.VERBOSE, limit_level=True)
+        Logging.json_file_handler = Logging._setup_log_file(json_file, logging.VERBOSE, formatter=JSONLoggingFormatter)
 
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
@@ -789,10 +891,15 @@ class Logging(object):
         # Enable debug and verbose files
         Logging.enable_debug_file(logger)
         Logging.enable_verbose_file(logger)
+        Logging.enable_json_file(logger)
 
         map(Logging.enable_debug_file, Logging.OUR_LOGGERS)
         map(Logging.enable_verbose_file, Logging.OUR_LOGGERS)
+        map(Logging.enable_json_file, Logging.OUR_LOGGERS)
 
-        logger.debug("logger set up: level={}, debug file={}, verbose file={}".format(level, debug_file, verbose_file))
+        logger.debug("logger set up: level={}, debug file={}, verbose file={}, json file={}".format(level,
+                                                                                                    debug_file,
+                                                                                                    verbose_file,
+                                                                                                    json_file))
 
         return logger
