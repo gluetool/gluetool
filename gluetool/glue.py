@@ -60,6 +60,7 @@ class GlueError(Exception):
     :ivar tuple caused_by: If set, contains tuple as returned by :py:func:`sys.exc_info`, describing
         the exception that caused this one to be born. ``None`` otherwise.
     """
+    no_sentry_exceptions = []
 
     def __init__(self, message, caused_by=None, **kwargs):
         super(GlueError, self).__init__(message, **kwargs)
@@ -76,14 +77,16 @@ class GlueError(Exception):
 
     @property
     def submit_to_sentry(self):
-        # pylint: disable=no-self-use
         """
         Decide whether the exception should be submitted to Sentry or not. By default,
-        all exceptions are submitted.
+        all exceptions are submitted. Exception listed in `no_sentry_exceptions` are not submitted.
 
         :rtype: bool
         :returns: ``True`` when the exception should be submitted to Sentry, ``False`` otherwise.
         """
+        exception_name = '.'.join([type(self).__module__, type(self).__name__])
+        if exception_name in self.no_sentry_exceptions:
+            return False
 
         return True
 
@@ -927,6 +930,11 @@ class Glue(Configurable):
             ('V', 'version'): {
                 'help': 'Print version',
                 'action': 'store_true'
+            },
+            'no-sentry-exceptions': {
+                'help': 'List of exception names, which are not reported to Sentry (Default: none)',
+                'action': 'append',
+                'default': []
             }
         }),
         ('Output control', {

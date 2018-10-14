@@ -18,7 +18,8 @@ from gluetool import GlueError, GlueRetryError, Failure
 from gluetool.help import extract_eval_context_info, docstring_to_help
 from gluetool.glue import PipelineStep
 from gluetool.log import log_dict
-from gluetool.utils import format_command_line, cached_property, normalize_path, render_template
+from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
+    normalize_multistring_option
 
 
 # Order is important, the later one overrides values from the former
@@ -294,6 +295,8 @@ class Gluetool(object):
         if Glue.option('version'):
             Glue.info('{} {}'.format(self._command_name, self._version))
             sys.exit(0)
+
+        GlueError.no_sentry_exceptions = normalize_multistring_option(Glue.option('no-sentry-exceptions'))
 
         Glue.load_modules()
 
