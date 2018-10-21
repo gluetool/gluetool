@@ -392,8 +392,8 @@ def _extract_stack(tb):
     """
     Construct a "stack" by merging two sources of data:
 
-    1. what's provided by ``traceback.extract_tb()``, i.e. ``(filename, lineno, fnname, text)``;
-    2. stack frame objects, hidden inside traceback object and available via iteration.
+    1. what's provided by ``traceback.extract_tb()``, i.e. ``(filename, lineno, fnname, text)`` tuple for each frame;
+    2. stack frame objects, hidden inside traceback object and available via following links from one frame to another.
 
     :rtype: list(list(str, int, str, str, frame))
     """
@@ -544,19 +544,30 @@ class LoggingFormatter(logging.Formatter):
 
     @staticmethod
     def _format_exception_chain(exc_info):
+        """
+        Format exception chain. Start with the one we're given, and follow its `caused_by` property
+        until we ran out of exceptions to format.
+        """
+
         tmpl = jinja2.Template(_TRACEBACK_TEMPLATE)
 
         output = ['']
 
+        # Don't unpack exception info to local variables - by assigning exc_info[2] (traceback) to a local
+        # variable, we might introduce a circular reference between our stack and traceback, making it hard
+        # for GC to collect this stack frame.
+
+        # Format one exception and its traceback
         def _add_block(label, exc, trace):
             stack = _extract_stack(trace)
 
             output.append(tmpl.render(label=label, exception=exc, stack=stack))
 
-        # don't unpack traceback - it might lead to a circular reference, leaving this frame
-        # uncollectable
+        # This is the most recent exception, we start with this one - it's often the one most visible,
+        # exceptions that caused it are usualy hidden from user's sight.
         _add_block('Exception', exc_info[1], exc_info[2])
 
+        # Iterate over any previous exceptions and format them as well.
         while getattr(exc_info[1], 'caused_by', None) is not None:
             exc_info = exc_info[1].caused_by
 
@@ -634,6 +645,49 @@ class JSONLoggingFormatter(logging.Formatter):
 
         super(JSONLoggingFormatter, self).__init__()
 
+    @staticmethod
+    def _format_exception_chain(serialized, exc_info):
+        """
+        "Format" exception chain - transform it into a bunch of JSON structures describing exceptions, stack frames,
+        local variables and so on.
+
+        Serves the same purpose as ``LoggingFormatter._format_exception_chain`` but that one produces a string,
+        textual representation suitable for printing. This method produces JSON structures, sutiable for, hm,
+        JSON log.
+        """
+
+        serialized['caused_by'] = []
+
+        # pylint: disable=invalid-name
+        def _add_cause(exc, tb):
+            exc_class = exc.__class__
+
+            stack = _extract_stack(tb)
+
+            serialized['caused_by'].append({
+                'exception': {
+                    'class': '{}.{}'.format(exc_class.__module__, exc_class.__name__),
+                    'message': exc.message
+                },
+                'traceback': [
+                    {
+                        'filename': filename,
+                        'lineno': lineno,
+                        'fnname': fnname,
+                        'text': text,
+                        'locals': frame.f_locals
+                    }
+                    for filename, lineno, fnname, text, frame in stack
+                ]
+            })
+
+        _add_cause(exc_info[1], exc_info[2])
+
+        while getattr(exc_info[1], 'caused_by', None) is not None:
+            exc_info = exc_info[1].caused_by
+
+            _add_cause(exc_info[1], exc_info[2])
+
     def format(self, record):
         # Construct a huuuuge dictionary describing the event
         serialized = {
@@ -651,41 +705,7 @@ class JSONLoggingFormatter(logging.Formatter):
         serialized['message'] = record.getMessage()
 
         if record.exc_info:
-            serialized['caused_by'] = []
-
-            exc_info = record.exc_info
-
-            # pylint: disable=invalid-name
-            def _add_cause(exc, tb):
-                exc_class = exc.__class__
-
-                stack = _extract_stack(tb)
-
-                serialized['caused_by'].append({
-                    'exception': {
-                        'class': '{}.{}'.format(exc_class.__module__, exc_class.__name__),
-                        'message': exc.message
-                    },
-                    'traceback': [
-                        {
-                            'filename': filename,
-                            'lineno': lineno,
-                            'fnname': fnname,
-                            'text': text,
-                            'locals': frame.f_locals
-                        }
-                        for filename, lineno, fnname, text, frame in stack
-                    ]
-                })
-
-            # don't unpack traceback - it might lead to a circular reference, leaving this frame
-            # uncollectable
-            _add_cause(exc_info[1], exc_info[2])
-
-            while getattr(exc_info[1], 'caused_by', None) is not None:
-                exc_info = exc_info[1].caused_by
-
-                _add_cause(exc_info[1], exc_info[2])
+            JSONLoggingFormatter._format_exception_chain(serialized, record.exc_info)
 
         return format_dict(serialized)
 
