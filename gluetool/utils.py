@@ -1014,6 +1014,56 @@ def load_json(filepath, logger=None):
         raise GlueError("Unable to load JSON file '{}': {}".format(filepath, str(exc)))
 
 
+def _load_yaml_variables(data, enabled=True, logger=None):
+    """
+    Load all variables from files referenced by a YAML, and return function to render a string
+    as a template using this variables. The files containing variables are mentioned in comments,
+    in a form ``# !include <filepath>`` form.
+
+    :param data: data loaded from a YAML file.
+    :param bool enabled: when set to ``False``, variables are not loaded and a simple no-op
+        function is returned.
+    :param gluetool.log.ContextLogger logger: Logger used for logging.
+    :returns: Function accepting a string and returning a rendered template.
+    """
+
+    logger = logger or Logging.get_logger()
+
+    # Our YAML reader preserves comments, they are accessible via `ca` attribute of the
+    # YAML data structure (which behaves like a dict or list, but it has additional
+    # powers).
+    if not enabled or not hasattr(data, 'ca') or not hasattr(data.ca, 'comment') or len(data.ca.comment) <= 1:
+        def _render_template(s):
+            return s
+
+        return _render_template
+
+    # Ok, so this YAML data contains comments. Check their values to find `!include` directives.
+    # Load referenced files and merged them into a single context.
+    context = {}
+
+    for comment in data.ca.comment[1]:
+        value = comment.value.strip()
+
+        if not value.startswith('# !include'):
+            continue
+
+        try:
+            variables_map_path = shlex.split(value[2:])[1]
+
+        except Exception as exc:
+            raise GlueError("Cannot extract filename to include from '{}': {}".format(value, exc))
+
+        logger.debug("loading variables from '{}'".format(variables_map_path))
+
+        context.update(load_yaml(variables_map_path, logger=logger))
+
+    def _render_template(s):
+        return render_template(s, logger=logger, **context)
+
+    return _render_template
+
+
 class SimplePatternMap(object):
     # pylint: disable=too-few-public-methods
 
@@ -1026,9 +1076,12 @@ class SimplePatternMap(object):
 
     :param str filepath: Path to a YAML file with map definition.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
+    :param bool allow_variables: if set, both patterns and converters are first treated as templates,
+        and as such are rendered before doing anything else. Map may contain special comments,
+        ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
-    def __init__(self, filepath, logger=None):
+    def __init__(self, filepath, logger=None, allow_variables=True):
         self.logger = logger or Logging.get_logger()
         logger.connect(self)
 
@@ -1036,6 +1089,8 @@ class SimplePatternMap(object):
 
         if pattern_map is None:
             raise GlueError("pattern map '{}' does not contain any patterns".format(filepath))
+
+        _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         self._compiled_map = []
 
@@ -1045,6 +1100,10 @@ class SimplePatternMap(object):
 
             pattern = pattern_dict.keys()[0]
             result = pattern_dict[pattern].strip()
+
+            # Apply variables if requested.
+            pattern = _render_template(pattern)
+            result = _render_template(result)
 
             try:
                 pattern = re.compile(pattern)
@@ -1128,9 +1187,12 @@ class PatternMap(object):
     :param str filepath: Path to a YAML file with map definition.
     :param dict spices: apping between `spices` and their `makers`.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
+    :param bool allow_variables: if set, both patterns and converters are first treated as templates,
+        and as such are rendered before doing anything else. Map may contain special comments,
+        ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
-    def __init__(self, filepath, spices=None, logger=None):
+    def __init__(self, filepath, spices=None, logger=None, allow_variables=True):
         self.logger = logger or Logging.get_logger()
         logger.connect(self)
 
@@ -1140,6 +1202,8 @@ class PatternMap(object):
 
         if pattern_map is None:
             raise GlueError("pattern map '{}' does not contain any patterns".format(filepath))
+
+        _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         def _create_simple_repl(repl):
             def _replace(pattern, target):
@@ -1166,8 +1230,12 @@ class PatternMap(object):
             if not isinstance(pattern_dict, dict):
                 raise GlueError("Invalid format: '- <pattern>: <transform>' expected, '{}' found".format(pattern_dict))
 
-            pattern = pattern_dict.keys()[0]
-            converter_chains = pattern_dict[pattern]
+            # There is always just a single key, the pattern.
+            pattern_key = pattern_dict.keys()[0]
+
+            # Apply variables if requested.
+            pattern = _render_template(pattern_key)
+            converter_chains = _render_template(pattern_dict[pattern_key])
 
             if isinstance(converter_chains, str):
                 converter_chains = [converter_chains]
