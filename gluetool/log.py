@@ -652,7 +652,7 @@ class JSONLoggingFormatter(logging.Formatter):
         local variables and so on.
 
         Serves the same purpose as ``LoggingFormatter._format_exception_chain`` but that one produces a string,
-        textual representation suitable for printing. This method produces JSON structures, sutiable for, hm,
+        textual representation suitable for printing. This method produces JSON structures, suitable for, hm,
         JSON log.
         """
 

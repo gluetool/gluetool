@@ -945,7 +945,7 @@ class Glue(Configurable):
             ('j', 'json-file'): {
                 'help': """
                         If set, all log messages (including ``VERBOSE``) are stored in this file
-                        in a form of JSON structures.
+                        in a form of JSON structures (default: %(default)s).
                         """,
                 'default': None
             },
