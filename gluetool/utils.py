@@ -1017,7 +1017,7 @@ def load_json(filepath, logger=None):
 def _load_yaml_variables(data, enabled=True, logger=None):
     """
     Load all variables from files referenced by a YAML, and return function to render a string
-    as a template using this variables. The files containing variables are mentioned in comments,
+    as a template using these variables. The files containing variables are mentioned in comments,
     in a form ``# !include <filepath>`` form.
 
     :param data: data loaded from a YAML file.
@@ -1029,14 +1029,19 @@ def _load_yaml_variables(data, enabled=True, logger=None):
 
     logger = logger or Logging.get_logger()
 
+    def _render_template_nop(s):
+        return s
+
+    if not enabled:
+        return _render_template_nop
+
     # Our YAML reader preserves comments, they are accessible via `ca` attribute of the
     # YAML data structure (which behaves like a dict or list, but it has additional
     # powers).
-    if not enabled or not hasattr(data, 'ca') or not hasattr(data.ca, 'comment') or len(data.ca.comment) <= 1:
-        def _render_template(s):
-            return s
+    if not hasattr(data, 'ca') or not hasattr(data.ca, 'comment') or len(data.ca.comment) <= 1:
+        logger.debug('when looking for !import directives, no comments found in YAML data')
 
-        return _render_template
+        return _render_template_nop
 
     # Ok, so this YAML data contains comments. Check their values to find `!include` directives.
     # Load referenced files and merged them into a single context.
