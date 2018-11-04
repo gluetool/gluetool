@@ -24,7 +24,8 @@ def fixture_enable_logger_propagate():
     not work as it sets up another logger, capturing messages propagated by our "real" loggers.
     """
 
-    gluetool.log.Logging.create_logger().propagate = True
+    gluetool.log.Logging.create_logger()
+    gluetool.log.Logging.logger.propagate = True
 
 
 @pytest.fixture(name='log', scope='function')

@@ -20,9 +20,9 @@ from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, Sequence, \
-    Tuple, Type, Union
-from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType
+from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, Sequence  # noqa
+from typing import Tuple, Type, Union  # noqa
+from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
     import gluetool.color  # noqa
@@ -80,7 +80,7 @@ class GlueError(Exception):
     def __init__(self, message, caused_by=None, **kwargs):
         # type: (str, Optional[ExceptionInfoType], **Any) -> None
 
-        super(GlueError, self).__init__(**kwargs)
+        super(GlueError, self).__init__(message, **kwargs)  # type: ignore  # too many arguments but it's fine
 
         self.message = message
 
@@ -322,13 +322,18 @@ class Configurable(object):
       configuration file.
     """
 
-    # logging type stubs
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
+    # Logging type stubs
+    # These methods are added dynamically, therefore without intruducing them to mypy, every use of `self.debug`
+    # would cause an error when checking types. We cannot simply set them to `None`, that makes pylint go crazy
+    # because `None` is apparently not callable, and we're calling `self.debug` often :) So, we use dummy lambdas
+    # for initialization, to make pylint happy, but we wrap them by `cast` to proper types to make mypy happy
+    # as well :)
+    verbose = cast(LoggingFunctionType, lambda s: None)
+    debug = cast(LoggingFunctionType, lambda s: None)
+    info = cast(LoggingFunctionType, lambda s: None)
+    warn = cast(LoggingWarningFunctionType, lambda s: None)
+    error = cast(LoggingFunctionType, lambda s: None)
+    exception = cast(LoggingFunctionType, lambda s: None)
 
     options = {}  # type: Union[Dict[Any, Any], List[Any]]
     """
@@ -529,7 +534,7 @@ class Configurable(object):
                         name, params['type'].__name__, exc.message))
 
             self._config[name] = value
-            self.debug("Option '{}' set to '{}' by config file".format(name, value))
+            self.debug("Option '{}' set to '{}' by config file".format(name, value))  # pylint: disable=not-callable
 
         def _inject_values(options, **kwargs):
             # type: (Any, **Any) -> None
@@ -684,6 +689,15 @@ class Configurable(object):
             if name not in self._config or not self._config[name]:
                 raise GlueError("Missing required '{}' option".format(name))
 
+    # `option()` returns two different types based on the number of positional arguments:
+    #
+    #   - 1 argument => returns just a single value (Any)
+    #   - more than 1 argument => returns a tuple of values
+    #
+    # `mypy` supports typechecking of such function by using @overload decorators, describing
+    # each variant, followed by the actual body of the function. We just need to silence pylint
+    # and flake since we're re-defining the method - these checkes does not understand @overload.
+
     # pylint: disable=function-redefined
 
     @overload
@@ -692,13 +706,13 @@ class Configurable(object):
 
         pass
 
-    @overload
+    @overload  # noqa
     def option(self, *names):
         # type: (*str) -> List[Any]
 
         pass
 
-    def option(self, *names): # type: ignore
+    def option(self, *names):  # type: ignore  # noqa
         """
         Return values of given options from module's configuration store.
 
@@ -792,7 +806,8 @@ class Configurable(object):
 
         if self.dryrun_level > self.supported_dryrun_level:
             dryrun_level_name = self.dryrun_level.name  # type: ignore  # `dryrun_level` is not pure int but Enum
-            raise GlueError("Module '{}' does not support current dry-run level of '{}'".format(self.unique_name, dryrun_level_name))
+            raise GlueError("Module '{}' does not support current dry-run level of '{}'".format(self.unique_name,
+                                                                                                dryrun_level_name))
 
     @property
     def eval_context(self):
@@ -1464,8 +1479,10 @@ class Glue(Configurable):
 
                 class_name = item.__class__.__name__
 
-                return cast(bool, (class_name == 'Import' and item.names[0].name == 'gluetool') \
-                                   or (class_name == 'ImportFrom' and item.module == 'gluetool'))
+                is_import = class_name == 'Import' and item.names[0].name == 'gluetool'
+                is_import_from = class_name == 'ImportFrom' and item.module == 'gluetool'
+
+                return cast(bool, is_import or is_import_from)
 
             if not any((imports_gluetool(item) for item in node.__dict__['body'])):
                 self.debug("  no 'import gluetool' found")

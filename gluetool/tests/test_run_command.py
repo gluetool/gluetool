@@ -37,7 +37,7 @@ def test_invalid_cmd():
         Command('/bin/ls').run()
 
     with pytest.raises(gluetool.GlueError,
-                       match=r"^Only list of strings is accepted, \[<type 'str'>, <type 'int'>\] found$"):
+                       match=r"^Only list of strings is accepted, \[\('/bin/ls', <type 'str'>\), \(13, <type 'int'>\)\] found$"):
         Command(['/bin/ls', 13]).run()
 
 

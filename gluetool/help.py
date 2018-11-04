@@ -30,11 +30,12 @@ from .color import Colors
 from .log import Logging
 
 # Type annotations
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Tuple, Union
+# pylint: disable=unused-import, wrong-import-order
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Tuple, Union  # noqa
 
 if TYPE_CHECKING:
-    import gluetool
-    import gluetool.glue
+    import gluetool  # noqa
+    import gluetool.glue  # noqa
 
 
 # Initialize Sphinx locale settings
@@ -414,7 +415,7 @@ def extract_eval_context_info(source, logger=None):
     # Cannot do "source.eval_context" because we'd get the value of property, which
     # is usualy a dict. We cannot let it evaluate and return the value, therefore
     # we must get it via its parent class.
-    eval_context = source.__class__.eval_context  # type: ignore  # we're operating on Module classes, eval_context exists
+    eval_context = source.__class__.eval_context  # type: ignore  # operating on Module classes, eval_context exists
 
     # this is not a cyclic import, yet pylint thinks so :/
     # pylint: disable=cyclic-import

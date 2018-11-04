@@ -47,32 +47,41 @@ import sys
 import time
 import traceback
 
-import bs4
 import jinja2
 
 from .color import Colors
 
 # Type annotations
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Union
-from typing_extensions import Protocol
-from types import TracebackType
+# pylint: disable=unused-import, wrong-import-order
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Union  # noqa
+from typing_extensions import Protocol  # noqa
+from types import TracebackType  # noqa
 
 if TYPE_CHECKING:
-    import gluetool
-    import gluetool.sentry
+    # pylint: disable=cyclic-import
+    import bs4  # noqa
+    import gluetool  # noqa
+    import gluetool.sentry  # noqa
 
 # Type definitions
+# pylint: disable=invalid-name
 ExceptionInfoType = Union[
     Tuple[Optional[type], Optional[BaseException], Optional[TracebackType]]
 ]
 
+
 class LoggingFunctionType(Protocol):
+    # pylint: disable=too-few-public-methods
+
     def __call__(self, message, exc_info=None, extra=None, **kwargs):
         # type: (Any, Optional[Union[bool, ExceptionInfoType]], Optional[Dict[str, Any]], **Any) -> None
 
         pass
 
+
 class LoggingWarningFunctionType(Protocol):
+    # pylint: disable=too-few-public-methods
+
     def __call__(self, message, exc_info=None, extra=None, sentry=False, **kwargs):
         # type: (Any, Optional[ExceptionInfoType], Optional[Dict[str, Any]], Optional[bool], **Any) -> None
 
@@ -507,13 +516,6 @@ class ContextAdapter(logging.LoggerAdapter):
         the information about context.
     """
 
-    #verbose = None  # type: LoggingFunctionType
-    #debug = None  # type: LoggingFunctionType
-    #info = None  # type: LoggingFunctionType
-    #warn = None  # type: LoggingWarningFunctionType
-    #error = None  # type: LoggingFunctionType
-    #exception = None  # type: LoggingFunctionType
-
     def __init__(self, logger, extra=None):
         # type: (Union[logging.Logger, ContextAdapter], Optional[Dict[str, Any]]) -> None
 
@@ -680,8 +682,10 @@ class LoggingFormatter(logging.Formatter):
             'msg': record.getMessage()
         }
 
-        if record.exc_info \
-                and (self.log_tracebacks is True or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))):
+        handler_logs_traceback = self.log_tracebacks is True \
+            or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))
+
+        if record.exc_info and handler_logs_traceback:
             fmt.append('{exc_text}')
 
             # \n helps formatting - logging would add formatted chain right after the leading message
@@ -805,7 +809,6 @@ class Logging(object):
     uses for logging.
     """
 
-
     #: Logger singleton - if anyone asks for a logger, they will get this one. Needs
     #: to be properly initialized by calling :py:meth:`create_logger`.
     logger = None  # logging.Logger
@@ -863,7 +866,7 @@ class Logging(object):
         """
 
         logger.propagate = False
-        logger.sentry_submit_warning = Logging.sentry_submit_warning  # type: ignore  # `sentry_submit_warning` is created
+        logger.sentry_submit_warning = Logging.sentry_submit_warning  # type: ignore  # `sentry_submit_warning` created
 
         # logger actually emits everything, handlers do filtering
         logger.setLevel(VERBOSE)
@@ -946,13 +949,13 @@ class Logging(object):
 
         return handler
 
-    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-arguments,line-too-long
     @staticmethod
     def create_logger(level=DEFAULT_LOG_LEVEL,
                       debug_file=None, verbose_file=None, json_file=None,
                       sentry=None, sentry_submit_warning=None,
                       show_traceback=False):
-        # type: (Optional[int], Optional[str], Optional[str], Optional[gluetool.sentry.Sentry], Optional[Callable[..., None]], bool) -> ContextAdapter
+        # type: (Optional[int], Optional[str], Optional[str], Optional[gluetool.sentry.Sentry], Optional[Callable[..., None]], bool) -> ContextAdapter  # noqa
 
         """
         Create and setup logger.
@@ -1039,6 +1042,7 @@ class Logging(object):
                                                                                                     json_file))
 
         return logger
+
 
 # Add log-level => label translation for our custom VERBOSE level
 logging.addLevelName(VERBOSE, 'VERBOSE')
