@@ -4,9 +4,13 @@ language: python
 
 python:
   - "2.7"
+  - "3.6"
 
 install: pip install tox-travis
 
 script:
-  - tox
-  - tox -e type-check
+  # At this moment, we're not compatible with Python 3 yet, and we need Python 3
+  # to check types. Therefore, unit tests + static analysis cannot be run using
+  # the same interpreter.
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then tox              ; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then tox -e type-check; fi
