@@ -37,10 +37,11 @@ import gluetool.log
 import gluetool.utils
 
 # Type annotations
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+# pylint: disable=unused-import, wrong-import-order
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union  # noqa
 
 if TYPE_CHECKING:
-    import logging
+    import logging  # noqa
 
 
 class Sentry(object):
@@ -172,10 +173,10 @@ class Sentry(object):
                 kwargs['exc_info'] = failure.exc_info
 
             if hasattr(failure.exception, 'sentry_fingerprint'):
-                fingerprint = failure.exception.sentry_fingerprint(fingerprint)  # type: ignore  # we use hasattr to check
+                fingerprint = failure.exception.sentry_fingerprint(fingerprint)  # type: ignore  # use hasattr to check
 
             if hasattr(failure.exception, 'sentry_tags'):
-                tags = failure.exception.sentry_tags(tags)  # type: ignore  # we use hasattr to check
+                tags = failure.exception.sentry_tags(tags)  # type: ignore  # use hasattr to check
 
         assert self._client is not None
         event_id = self._client.capture(event_type, tags=tags, fingerprint=fingerprint, **kwargs)  # type: str

@@ -398,7 +398,7 @@ class ProcessOutput(object):
 
     # pylint: disable=too-many-arguments,too-few-public-methods
     def __init__(self, cmd, exit_code, stdout, stderr, kwargs):
-        # type: (List[str], int, str, str, Dict[str, Any]) -> None
+        # type: (List[str], int, Optional[str], Optional[str], Dict[str, Any]) -> None
 
         self.cmd = cmd
         self.kwargs = kwargs
@@ -591,8 +591,6 @@ class Command(object):
         assert self.logger is not None
         assert self._command is not None
         assert self._exit_code is not None
-        assert self._stdout is not None
-        assert self._stderr is not None
         assert self._popen_kwargs is not None
 
         output = ProcessOutput(self._command, self._exit_code, self._stdout, self._stderr, self._popen_kwargs)
@@ -718,6 +716,7 @@ def check_for_commands(cmds):
     # type: (List[str]) -> None
 
     """ Checks if all commands in list cmds are valid """
+
     for cmd in cmds:
         try:
             Command(['/bin/bash', '-c', 'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
