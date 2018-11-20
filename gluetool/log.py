@@ -527,6 +527,8 @@ class ContextAdapter(logging.LoggerAdapter):
         self.sentry_submit_warning = getattr(logger, 'sentry_submit_warning', None)
 
     def addHandler(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
         self._logger.addHandler(*args, **kwargs)
 
     def process(self, msg, kwargs):
