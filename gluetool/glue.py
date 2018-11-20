@@ -1749,9 +1749,8 @@ class Glue(Configurable):
         else:
             level = logging.INFO
 
-        # enable global color support
-        import gluetool.utils  # to avoid circular import
-        switch_colors(gluetool.utils.normalize_bool_option(self.option('colors')))
+        from .utils import normalize_bool_option
+        switch_colors(normalize_bool_option(self.option('colors')))
 
         debug_file = self.option('debug-file')
         verbose_file = self.option('verbose-file')
