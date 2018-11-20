@@ -1602,11 +1602,14 @@ class Glue(Configurable):
 
             assert issubclass(cls, Module)
 
-            if not hasattr(cls, 'name') or not cls.name:
-                raise GlueError("No name specified by module class '{}' from file '{}'".format(
-                    cls.__name__, filepath))
+            module_names = getattr(cls, 'name', None)  # type: Union[None, List[str], Tuple[str]]
+
+            if not module_names:
+                raise GlueError('No name specified by module class {}:{}'.format(filepath, cls.__name__))
 
             def add_module(mname, cls):
+                # type: (str, Type[Module]) -> None
+
                 if mname in self.modules:
                     raise GlueError("Name '{}' of module '{}' from '{}' is a duplicate module name".format(
                         mname, cls.__name__, filepath))
@@ -1623,11 +1626,12 @@ class Glue(Configurable):
                 loaded_modules.append((group, cls))
 
             # if name is a list, add more aliases to the same module
-            if isinstance(cls.name, (list, tuple)):
-                for mname in cls.name:
+            if isinstance(module_names, (list, tuple)):
+                for mname in module_names:
                     add_module(mname, cls)
+
             else:
-                add_module(cls.name, cls)
+                add_module(module_names, cls)
 
         return loaded_modules
 
@@ -1759,7 +1763,7 @@ class Glue(Configurable):
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
 
-        show_traceback = gluetool.utils.normalize_bool_option(self.option('show-traceback'))
+        show_traceback = normalize_bool_option(self.option('show-traceback'))
 
         logger = Logging.create_logger(level=level,
                                        debug_file=debug_file,
