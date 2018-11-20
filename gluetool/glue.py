@@ -14,7 +14,7 @@ from functools import partial
 import enum
 import jinja2
 
-from .color import Colors
+from .color import Colors, switch as switch_colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
 from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 
@@ -1600,7 +1600,7 @@ class Glue(Configurable):
             if not isinstance(cls, type) or not issubclass(cls, Module) or cls == Module:
                 continue
 
-            assert isinstance(cls, Module)
+            assert issubclass(cls, Module)
 
             if not hasattr(cls, 'name') or not cls.name:
                 raise GlueError("No name specified by module class '{}' from file '{}'".format(
@@ -1750,7 +1750,8 @@ class Glue(Configurable):
             level = logging.INFO
 
         # enable global color support
-        gluetool.color.switch(gluetool.utils.normalize_bool_option(self.option('colors')))
+        import gluetool.utils  # to avoid circular import
+        switch_colors(gluetool.utils.normalize_bool_option(self.option('colors')))
 
         debug_file = self.option('debug-file')
         verbose_file = self.option('verbose-file')
