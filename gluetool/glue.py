@@ -950,6 +950,13 @@ class Glue(Configurable):
                 'help': 'Print command-line that would re-run the gluetool session',
                 'action': 'store_true'
             },
+            ('j', 'json-file'): {
+                'help': """
+                        If set, all log messages (including ``VERBOSE``) are stored in this file
+                        in a form of JSON structures (default: %(default)s).
+                        """,
+                'default': None
+            },
             ('o', 'debug-file', 'output'): {
                 'help': 'Log messages with at least ``DEBUG`` level are sent to this file.'
             },
@@ -1495,6 +1502,7 @@ class Glue(Configurable):
 
         debug_file = self.option('debug-file')
         verbose_file = self.option('verbose-file')
+        json_file = self.option('json-file')
 
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
@@ -1504,6 +1512,7 @@ class Glue(Configurable):
         logger = Logging.create_logger(level=level,
                                        debug_file=debug_file,
                                        verbose_file=verbose_file,
+                                       json_file=json_file,
                                        sentry=self._sentry,
                                        show_traceback=show_traceback)
 
