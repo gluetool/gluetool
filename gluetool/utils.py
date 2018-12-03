@@ -1447,7 +1447,7 @@ def wait(label, check, timeout=None, tick=30, logger=None):
 
 
 def new_xml_element(tag_name, _parent=None, **attrs):
-    # type: (str, Optional[Any], **Dict[str, str]) -> Any
+    # type: (str, Optional[Any], **str) -> Any
 
     """
     Create new XML element.
