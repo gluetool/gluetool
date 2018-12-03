@@ -940,8 +940,12 @@ class Logging(object):
     )
 
     @staticmethod
-    def _setup_log_file(filepath, level, limit_level=False, formatter_class=LoggingFormatter):
-        # type: (str, int, Optional[bool], Type[logging.Formatter]) -> Optional[logging.FileHandler]
+    def _setup_log_file(filepath,  # type: str
+                        level,  # type: int
+                        limit_level=False,  # type: bool
+                        formatter_class=LoggingFormatter  # type: Type[Union[LoggingFormatter, JSONLoggingFormatter]]
+                       ):  # noqa
+        # type: (...) -> Optional[logging.FileHandler]
 
         if filepath is None:
             return None
