@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 """
 Logging support.
 
@@ -52,8 +54,8 @@ import jinja2
 from .color import Colors
 
 # Type annotations
-# pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Union  # noqa
+# pylint: disable=unused-import, wrong-import-order, line-too-long
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
 from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
 
@@ -531,6 +533,11 @@ class ContextAdapter(logging.LoggerAdapter):
 
         self._logger.addHandler(*args, **kwargs)
 
+    def removeHandler(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
+        self._logger.removeHandler(*args, **kwargs)
+
     def process(self, msg, kwargs):
         # type: (str, MutableMapping[str, Any]) -> Tuple[str, MutableMapping[str, Any]]
 
@@ -741,12 +748,14 @@ class JSONLoggingFormatter(logging.Formatter):
     """
 
     def __init__(self, **kwargs):
+        # type: (**Any) -> None
         # pylint: disable=unused-argument
 
         super(JSONLoggingFormatter, self).__init__()
 
     @staticmethod
     def _format_exception_chain(serialized, exc_info):
+        # type: (Dict[str, Any], ExceptionInfoType) -> None
         """
         "Format" exception chain - transform it into a bunch of JSON structures describing exceptions, stack frames,
         local variables and so on.
@@ -760,14 +769,20 @@ class JSONLoggingFormatter(logging.Formatter):
 
         # pylint: disable=invalid-name
         def _add_cause(exc, tb):
-            exc_class = exc.__class__
+            # type: (Optional[BaseException], Optional[TracebackType]) -> None
 
-            stack = _extract_stack(tb)
+            if exc:
+                exc_module, exc_class, exc_message = exc.__class__.__module__, exc.__class__.__name__, exc.message
+
+            else:
+                exc_module, exc_class, exc_message = '', '', ''
+
+            stack = _extract_stack(tb) if tb else []
 
             serialized['caused_by'].append({
                 'exception': {
-                    'class': '{}.{}'.format(exc_class.__module__, exc_class.__name__),
-                    'message': exc.message
+                    'class': '{}.{}'.format(exc_module, exc_class),
+                    'message': exc_message
                 },
                 'traceback': [
                     {
@@ -783,12 +798,14 @@ class JSONLoggingFormatter(logging.Formatter):
 
         _add_cause(exc_info[1], exc_info[2])
 
-        while getattr(exc_info[1], 'caused_by', None) is not None:
-            exc_info = exc_info[1].caused_by
+        while exc_info[1] and getattr(exc_info[1], 'caused_by', None) is not None:
+            exc_info = exc_info[1].caused_by  # type: ignore  # we estblished above exc_info[1] has `caused_by`
 
             _add_cause(exc_info[1], exc_info[2])
 
     def format(self, record):
+        # type: (logging.LogRecord) -> str
+
         # Construct a huuuuge dictionary describing the event
         serialized = {
             field: getattr(record, field, None)
@@ -910,6 +927,8 @@ class Logging(object):
 
     @staticmethod
     def enable_json_file(logger):
+        # type: (Union[logging.Logger, ContextAdapter]) -> None
+
         if not Logging.json_file_handler:
             return
 
@@ -921,8 +940,8 @@ class Logging(object):
     )
 
     @staticmethod
-    def _setup_log_file(filepath, level, limit_level=False, formatter=LoggingFormatter):
-        # type: (str, int, Optional[bool], LoggingFormatter) -> Optional[logging.FileHandler]
+    def _setup_log_file(filepath, level, limit_level=False, formatter_class=LoggingFormatter):
+        # type: (str, int, Optional[bool], Type[logging.Formatter]) -> Optional[logging.FileHandler]
 
         if filepath is None:
             return None
@@ -935,7 +954,7 @@ class Logging(object):
 
         handler.setLevel(level)
 
-        formatter = formatter(colors=False, log_tracebacks=True)
+        formatter = formatter_class(colors=False, log_tracebacks=True)
         handler.setFormatter(formatter)
 
         def _close_log_file():
@@ -958,11 +977,15 @@ class Logging(object):
 
     # pylint: disable=too-many-arguments,line-too-long
     @staticmethod
-    def create_logger(level=DEFAULT_LOG_LEVEL,
-                      debug_file=None, verbose_file=None, json_file=None,
-                      sentry=None, sentry_submit_warning=None,
-                      show_traceback=False):
-        # type: (Optional[int], Optional[str], Optional[str], Optional[gluetool.sentry.Sentry], Optional[Callable[..., None]], bool) -> ContextAdapter  # noqa
+    def create_logger(level=DEFAULT_LOG_LEVEL,  # type: int
+                      debug_file=None,  # type: Optional[str]
+                      verbose_file=None,  # type: Optional[str]
+                      json_file=None,  # type: Optional[str]
+                      sentry=None,  # type: Optional[gluetool.sentry.Sentry]
+                      sentry_submit_warning=None,  # type: Optional[Callable[..., None]]
+                      show_traceback=False  # type: bool
+                     ):  # noqa
+        # type: (...) -> ContextAdapter
 
         """
         Create and setup logger.
@@ -1022,9 +1045,14 @@ class Logging(object):
         Logging.stderr_handler.formatter.log_tracebacks = show_traceback  # type: ignore
 
         # create debug and verbose files
-        Logging.debug_file_handler = Logging._setup_log_file(debug_file, logging.DEBUG)
-        Logging.verbose_file_handler = Logging._setup_log_file(verbose_file, logging.VERBOSE, limit_level=True)
-        Logging.json_file_handler = Logging._setup_log_file(json_file, logging.VERBOSE, formatter=JSONLoggingFormatter)
+        if debug_file:
+            Logging.debug_file_handler = Logging._setup_log_file(debug_file, logging.DEBUG)
+
+        if verbose_file:
+            Logging.verbose_file_handler = Logging._setup_log_file(verbose_file, VERBOSE, limit_level=True)
+
+        if json_file:
+            Logging.json_file_handler = Logging._setup_log_file(json_file, VERBOSE, formatter_class=JSONLoggingFormatter)
 
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
