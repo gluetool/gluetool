@@ -1064,7 +1064,16 @@ def _load_yaml_variables(data, enabled=True, logger=None):
         context.update(load_yaml(variables_map_path, logger=logger))
 
     def _render_template(s):
-        return render_template(s, logger=logger, **context)
+        if isinstance(s, str):
+            return render_template(s, logger=logger, **context)
+
+        if isinstance(s, list):
+            return [
+                render_template(t, logger=logger, **context)
+                for t in s
+            ]
+
+        raise GlueError("Don't know how to render object of type {}".format(type(s)))
 
     return _render_template
 
@@ -1109,6 +1118,8 @@ class SimplePatternMap(object):
             # Apply variables if requested.
             pattern = _render_template(pattern)
             result = _render_template(result)
+
+            log_dict(logger.debug, "rendered mapping '{}'".format(pattern), result)
 
             try:
                 pattern = re.compile(pattern)
@@ -1241,6 +1252,8 @@ class PatternMap(object):
             # Apply variables if requested.
             pattern = _render_template(pattern_key)
             converter_chains = _render_template(pattern_dict[pattern_key])
+
+            log_dict(logger.debug, "rendered mapping '{}'".format(pattern), converter_chains)
 
             if isinstance(converter_chains, str):
                 converter_chains = [converter_chains]
