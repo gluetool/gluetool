@@ -1197,7 +1197,7 @@ class PatternMap(object):
         ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
-    def __init__(self, filepath, spices=None, logger=None, allow_variables=True):
+    def __init__(self, filepath, spices=None, logger=None, allow_variables=False):
         self.logger = logger or Logging.get_logger()
         logger.connect(self)
 
