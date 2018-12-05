@@ -1148,6 +1148,7 @@ def load_json(filepath, logger=None):
 
 
 def _load_yaml_variables(data, enabled=True, logger=None):
+    # type: (Any, bool, Optional[ContextAdapter]) -> Callable[[str], Union[str, List[str]]]
     """
     Load all variables from files referenced by a YAML, and return function to render a string
     as a template using these variables. The files containing variables are mentioned in comments,
@@ -1163,6 +1164,8 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     logger = logger or Logging.get_logger()
 
     def _render_template_nop(s):
+        # type: (str) -> str
+
         return s
 
     if not enabled:
@@ -1178,7 +1181,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
 
     # Ok, so this YAML data contains comments. Check their values to find `!include` directives.
     # Load referenced files and merged them into a single context.
-    context = {}
+    context = {}  # type: Dict[str, Any]
 
     for comment in data.ca.comment[1]:
         value = comment.value.strip()
@@ -1197,6 +1200,8 @@ def _load_yaml_variables(data, enabled=True, logger=None):
         context.update(load_yaml(variables_map_path, logger=logger))
 
     def _render_template(s):
+        # type: (Union[str, List[str]]) -> Union[str, List[str]]
+
         if isinstance(s, str):
             return render_template(s, logger=logger, **context)
 
@@ -1264,7 +1269,9 @@ class SimplePatternMap(object):
             pattern = _render_template(pattern)
             result = _render_template(result)
 
-            log_dict(logger.debug, "rendered mapping '{}'".format(pattern), result)
+            log_dict(logger.debug,  # type: ignore  # logger.debug signature is compatible
+                     "rendered mapping '{}'".format(pattern),
+                     result)
 
             try:
                 pattern = re.compile(pattern)
@@ -1364,8 +1371,13 @@ class PatternMap(object):
     error = None  # type: LoggingFunctionType
     exception = None  # type: LoggingFunctionType
 
-    def __init__(self, filepath, spices=None, logger=None, allow_variables=False):
-        # type: (str, Optional[Dict[str, Callable[..., Callable[[Any, str], str]]]], Optional[ContextAdapter], bool) -> None
+    def __init__(self,
+                 filepath,  # type: str
+                 spices=None,  # type: Optional[Dict[str, Callable[..., Callable[[Any, str], str]]]]
+                 logger=None,  # type: Optional[ContextAdapter]
+                 allow_variables=False  # type: bool
+                ):  # noqa
+        # type: (...) -> None
 
         self.logger = logger or Logging.get_logger()
 
@@ -1416,13 +1428,20 @@ class PatternMap(object):
             pattern = _render_template(pattern_key)
             converter_chains = _render_template(pattern_dict[pattern_key])
 
-            log_dict(logger.debug, "rendered mapping '{}'".format(pattern), converter_chains)
+            # Given how YAML works, `pattern` is a string, but the type of `_render_template` return value
+            # is Union[str, List[str]] - this covers possible lists on the right side of the equation.
+            # To make mypy happy, let's collapse type of `pattern`.
+            assert isinstance(pattern, str)
+
+            log_dict(logger.debug,  # type: ignore  # logger.debug signature is compatible
+                     "rendered mapping '{}'".format(pattern),
+                     converter_chains)
 
             if isinstance(converter_chains, str):
                 converter_chains = [converter_chains]
 
             try:
-                pattern = re.compile(pattern)
+                compiled_pattern = re.compile(pattern)
 
             except re.error as e:
                 raise GlueError("Pattern '{}' is not valid: {}".format(pattern, str(e)))
@@ -1445,7 +1464,7 @@ class PatternMap(object):
 
                 compiled_chains.append(converter)
 
-            self._compiled_map.append((pattern, compiled_chains))
+            self._compiled_map.append((compiled_pattern, compiled_chains))
 
     def match(self, s, multiple=False):
         # type: (str, bool) -> Union[str, List[str]]
