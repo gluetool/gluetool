@@ -42,6 +42,8 @@ if __name__ == '__main__':
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',
+              'typing==3.6.6',
+              'typing-extensions==3.6.6',
               'urlnorm==1.1.4'
           ],
           description='Python framework for constructing command-line pipelines',

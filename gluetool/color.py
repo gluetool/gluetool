@@ -4,6 +4,10 @@ Helpers for terminal color support.
 
 import jinja2.defaults
 
+# Type annotations
+# pylint: disable=unused-import,wrong-import-order
+from typing import Any, Callable, Dict, Optional, Tuple  # noqa
+
 
 try:
     import colorama
@@ -15,28 +19,32 @@ try:
 
     _FG = {
         color: getattr(colorama.Fore, color.upper()) for color in _FG_COLORS
-    }
+    }  # type: Dict[str, str]
 
     _BG = {
         color: getattr(colorama.Back, color.upper()) for color in _BG_COLORS
-    }
+    }  # type: Dict[str, str]
 
 except ImportError:
     COLOR_SUPPORT = False
 
 
 def _style_plain(text, **kwargs):
+    # type: (str, **str) -> str
+
     # pylint: disable=unused-argument
     return text
 
 
 # pylint: disable=invalid-name
 def _style_colors(text, fg=None, bg=None, reset=True):
-    fg = getattr(colorama.Fore, fg.upper()) if fg in _FG_COLORS else ''
-    bg = getattr(colorama.Back, bg.upper()) if bg in _BG_COLORS else ''
-    reset = colorama.Style.RESET_ALL if reset else ''
+    # type: (str, Optional[str], Optional[str], Optional[bool]) -> str
 
-    return '{}{}{}{}'.format(fg, bg, text, reset)
+    fg_code = getattr(colorama.Fore, fg.upper()) if fg in _FG_COLORS else ''
+    bg_code = getattr(colorama.Back, bg.upper()) if bg in _BG_COLORS else ''
+    reset_code = colorama.Style.RESET_ALL if reset else ''
+
+    return '{}{}{}{}'.format(fg_code, bg_code, text, reset_code)
 
 
 # Make `style` a static method, to allow its change on the "global" level while letting
@@ -44,10 +52,12 @@ def _style_colors(text, fg=None, bg=None, reset=True):
 class Colors(object):
     # pylint: disable=too-few-public-methods
 
-    style = None
+    style = None  # type: Callable[..., str]
 
 
 def switch(enabled):
+    # type: (bool) -> None
+
     """
     Enable or disable output colors.
 
@@ -58,10 +68,13 @@ def switch(enabled):
         # pylint: disable=cyclic-import
         from .log import Logging
 
-        Logging.get_logger().warn("Unable to turn on colorized terminal messages, please install 'colorama' package")
+        logger = Logging.get_logger()
+        assert logger is not None
+
+        logger.warn("Unable to turn on colorized terminal messages, please install 'colorama' package")
         return
 
-    Colors.style = staticmethod(_style_colors if enabled else _style_plain)
+    Colors.style = staticmethod(_style_colors if enabled else _style_plain)  # type: ignore  # types are compatible
 
     jinja2.defaults.DEFAULT_FILTERS['style'] = Colors.style
 

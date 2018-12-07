@@ -36,6 +36,13 @@ import gluetool
 import gluetool.log
 import gluetool.utils
 
+# Type annotations
+# pylint: disable=unused-import, wrong-import-order
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union  # noqa
+
+if TYPE_CHECKING:
+    import logging  # noqa
+
 
 class Sentry(object):
     """
@@ -53,13 +60,15 @@ class Sentry(object):
     """
 
     def __init__(self, dsn_env_var='SENTRY_DSN', base_url_env_var='SENTRY_BASE_URL', tags_map_env_var='SENTRY_TAG_MAP'):
+        # type: (Optional[str], Optional[str], Optional[str]) -> None
+
         self._client = None
         self._base_url = None
 
         if base_url_env_var:
             self._base_url = os.environ.get(base_url_env_var, None)
 
-        self._tag_map = {}
+        self._tag_map = {}  # type: Dict[str, str]
 
         if tags_map_env_var and os.environ.get(tags_map_env_var):
             try:
@@ -91,15 +100,21 @@ class Sentry(object):
 
     @gluetool.utils.cached_property
     def enabled(self):
+        # type: () -> bool
+
         return self._client is not None
 
     def enable_logging_breadcrumbs(self, logger):
+        # type: (Union[logging.Logger, gluetool.log.ContextAdapter]) -> None
+
         if not self.enabled:
             return
 
         raven.breadcrumbs.register_special_log_handler(logger, lambda *args: False)
 
     def event_url(self, event_id, logger=None):
+        # type: (str, Optional[gluetool.log.ContextAdapter]) -> Optional[str]
+
         """
         Return URL showing the event on the Sentry server. If ``event_id``
         is ``None`` or when base URL of the Sentry server was not set, ``None``
@@ -117,6 +132,8 @@ class Sentry(object):
 
     @staticmethod
     def log_issue(failure, logger=None):
+        # type: (Optional[gluetool.Failure], Optional[gluetool.log.ContextAdapter]) -> None
+
         """
         Nicely log issue and possibly its URL.
 
@@ -133,6 +150,8 @@ class Sentry(object):
             logger.error('See {} for details.'.format(failure.sentry_event_url))
 
     def _capture(self, event_type, logger=None, failure=None, **kwargs):
+        # type: (str, Optional[gluetool.log.ContextAdapter], Optional[gluetool.Failure], **Any) -> str
+
         """
         Prepare common arguments, and then submit the data to the Sentry server.
         """
@@ -154,12 +173,13 @@ class Sentry(object):
                 kwargs['exc_info'] = failure.exc_info
 
             if hasattr(failure.exception, 'sentry_fingerprint'):
-                fingerprint = failure.exception.sentry_fingerprint(fingerprint)
+                fingerprint = failure.exception.sentry_fingerprint(fingerprint)  # type: ignore  # use hasattr to check
 
             if hasattr(failure.exception, 'sentry_tags'):
-                tags = failure.exception.sentry_tags(tags)
+                tags = failure.exception.sentry_tags(tags)  # type: ignore  # use hasattr to check
 
-        event_id = self._client.capture(event_type, tags=tags, fingerprint=fingerprint, **kwargs)
+        assert self._client is not None
+        event_id = self._client.capture(event_type, tags=tags, fingerprint=fingerprint, **kwargs)  # type: str
 
         if failure is not None:
             failure.sentry_event_id = event_id
@@ -170,6 +190,8 @@ class Sentry(object):
         return event_id
 
     def submit_exception(self, failure, logger=None, **kwargs):
+        # type: (gluetool.Failure, Optional[gluetool.log.ContextAdapter], **Any) -> Optional[str]
+
         """
         Submits an exception to the Sentry server. Exceptions are usually submitted
         automagically, but sometimes you might feel the need to share arbitrary issues
@@ -183,18 +205,20 @@ class Sentry(object):
         """
 
         if not self.enabled:
-            return
+            return None
 
         exc = failure.exception
         if exc and not getattr(exc, 'submit_to_sentry', True):
             if logger:
                 logger.warn('As requested, exception {} not submitted to Sentry'.format(exc.__class__.__name__))
 
-            return
+            return None
 
         return self._capture('raven.events.Exception', logger=logger, failure=failure, **kwargs)
 
     def submit_warning(self, msg, logger=None, **kwargs):
+        # type: (str, Optional[gluetool.log.ContextAdapter], **Any) -> Optional[str]
+
         """
         Submits a warning to the Sentry server. You might feel the need to share arbitrary
         issues - e.g. warnings that are not serious enough to kill the pipeline - with the
@@ -208,6 +232,6 @@ class Sentry(object):
         """
 
         if not self.enabled:
-            return
+            return None
 
         return self._capture('raven.events.Message', logger=logger, message=msg, **kwargs)
