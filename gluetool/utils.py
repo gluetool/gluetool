@@ -879,7 +879,9 @@ def requests(logger=None):
             ret = original_method(*args, **kwargs)
 
             assert logger is not None
-            log_blob(logger.debug, 'response content', ret.text)  # type: ignore  # logger.debug signature is compatible
+            log_blob(logger.debug,  # type: ignore  # logger.debug signature is compatible
+                     'response content',
+                     ret.content)
 
             return ret
 
