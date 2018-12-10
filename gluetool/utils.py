@@ -35,7 +35,7 @@ from .log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Pattern, Tuple, Union  # noqa
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, Union  # noqa
 from .log import LoggingFunctionType, LoggingWarningFunctionType  # noqa
 
 if TYPE_CHECKING:
@@ -466,14 +466,13 @@ class Command(object):
 
     # pylint: disable=too-few-public-methods
 
-    # logging type stubs
-    # pylint: disable=not-callable
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
+    # Logging type stubs
+    verbose = cast(LoggingFunctionType, lambda s: None)
+    debug = cast(LoggingFunctionType, lambda s: None)
+    info = cast(LoggingFunctionType, lambda s: None)
+    warn = cast(LoggingWarningFunctionType, lambda s: None)
+    error = cast(LoggingFunctionType, lambda s: None)
+    exception = cast(LoggingFunctionType, lambda s: None)
 
     def __init__(self, executable, options=None, logger=None):
         # type: (List[str], Optional[List[str]], Optional[ContextAdapter]) -> None
