@@ -520,7 +520,7 @@ class Command(object):
         self._stdout, self._stderr = self._process.communicate()
 
     def _communicate_inspect(self, inspect_callback):
-        # type: (Callable[..., None]) -> None
+        # type: (Optional[Callable[..., None]]) -> None
 
         # Collapse optionals to specific types
         assert self._command is not None
@@ -533,6 +533,8 @@ class Command(object):
 
         if inspect_callback is None:
             def stdout_write(stream, data, flush=False):
+                # type: (Any, Any, bool) -> None
+
                 # pylint: disable=unused-argument
 
                 if data is None:
@@ -669,8 +671,6 @@ class Command(object):
             self._process = subprocess.Popen(self._command, **self._popen_kwargs)
 
             if inspect is True:
-                assert inspect_callback is not None
-
                 self._communicate_inspect(inspect_callback)
 
             else:
