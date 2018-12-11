@@ -524,7 +524,7 @@ class ContextAdapter(logging.LoggerAdapter):
         super(ContextAdapter, self).__init__(logger, extra or {})  # type: ignore  # base class expects just Logger
 
         self._logger = logger
-        self.name = logger.name
+        self.name = logger.name  # type: str
 
         self.warn = self.warning
         self.sentry_submit_warning = getattr(logger, 'sentry_submit_warning', None)
