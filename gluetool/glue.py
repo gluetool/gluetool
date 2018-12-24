@@ -1387,11 +1387,13 @@ class Glue(Configurable):
 
         # pylint: disable=unused-variable
         __content__ = {  # noqa
-            'ENV': 'Dictionary representing environment variables.'
+            'ENV': 'Dictionary representing environment variables.',
+            'PIPELINE': 'Current pipeline, represented as a list of ``PipelineStep`` instances.'
         }
 
         return {
-            'ENV': dict(os.environ)
+            'ENV': dict(os.environ),
+            'PIPELINE': self.current_pipeline
         }
 
     def _eval_context_module_caller(self):
