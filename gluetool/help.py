@@ -26,14 +26,14 @@ import sphinx.locale
 import sphinx.util.nodes
 
 import six
-from six import iteritems
+from six import PY2, ensure_text, ensure_str, iteritems
 
 from .color import Colors
 from .log import Logging
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Tuple, Union  # noqa
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Text, Tuple, Union  # noqa
 
 if TYPE_CHECKING:
     import gluetool  # noqa
@@ -63,19 +63,19 @@ sphinx.writers.text.MAXWIDTH = CROP_WIDTH
 # Semantic colorizers
 # pylint: disable=invalid-name
 def C_FUNCNAME(text):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_ARGNAME(text):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_LITERAL(text):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     return Colors.style(text, fg='cyan', reset=True)
 
@@ -132,11 +132,12 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
         super(LineWrapRawTextHelpFormatter, self).__init__(*args, **kwargs)
 
-    def _split_lines(self, text, width):  # type: ignore  # incompatible with super type because of unicode
-        # type: (str, int) -> List[str]
+    def _split_lines(self, text, width):  # # type: ignore  # incompatible with super type because of unicode
+        # type: (Text, int) -> List[Text]
 
-        text = self._whitespace_matcher.sub(' ', text).strip()
-        return cast(List[str], textwrap.wrap(text, width))
+        text = ensure_text(self._whitespace_matcher.sub(' ', ensure_str(text)).strip())
+
+        return textwrap.wrap(text, width)
 
 
 #
@@ -145,23 +146,23 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
 #
 
 def py_default_role(role, rawtext, text, lineno, inliner, options=None, content=None):
-    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+    # type: (Any, Text, Text, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
 
     # pylint: disable=unused-argument,too-many-arguments
     """
     Default handler we use for ``py:...`` roles, translates text to literal node.
     """
 
-    return [docutils.nodes.literal(rawsource=rawtext, text='{}'.format(text))], []
+    return [docutils.nodes.literal(rawsource=rawtext, text='{}'.format(text))], []  # type: ignore
 
 
 # register default handler for roles we're interested in
 for python_role in ('py:class', 'py:meth', 'py:mod'):
-    docutils.parsers.rst.roles.register_canonical_role(python_role, py_default_role)
+    docutils.parsers.rst.roles.register_canonical_role(python_role, py_default_role)  # type: ignore
 
 
 def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context=None):
-    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+    # type: (Any, Text, Text, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
 
     # pylint: disable=unused-argument,too-many-arguments
     """
@@ -173,10 +174,10 @@ def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context
     if target and target[0] == '/':
         target = 'docs/source/{}.rst'.format(target[1:])
 
-    return [docutils.nodes.literal(rawsource=text, text='{} (See {})'.format(title, target))], []
+    return [docutils.nodes.literal(rawsource=text, text='{} (See {})'.format(title, target))], []  # type: ignore
 
 
-docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)
+docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)  # type: ignore  # `roles` does exist
 
 
 class DummyTextBuilder:
@@ -204,27 +205,21 @@ class DummyTextBuilder:
 
 
 def rst_to_text(text):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     """
     Render given text, written with RST, as plain text.
 
-    :param str text: string to render.
-    :rtype: str
+    :param text text: string to render.
+    :rtype: text
     :returns: plain text representation of ``text``.
     """
 
-    text = cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
-
-    # in Python3 the publish_string returns bytes, convert it to string
-    if six.PY3:
-        return str(text, 'utf-8')
-
-    return text
+    return ensure_text(docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
 
 
 def trim_docstring(docstring):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     """
     Quoting `PEP 257 <https://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation>`:
@@ -272,7 +267,7 @@ def trim_docstring(docstring):
 
 
 def docstring_to_help(docstring, width=None, line_prefix='    '):
-    # type: (str, Optional[int], str) -> str
+    # type: (Text, Optional[int], Text) -> Text
 
     """
     Given docstring, process and render it as a plain text. This conversion function
@@ -295,13 +290,13 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
     # For each line - which is actually a paragraph, given the text comes from RST - wrap it
     # to fit inside given line length (a bit shorter, there's a prefix for each line!).
-    wrapped_lines = []  # type: List[str]
+    wrapped_lines = []  # type: List[Text]
     wrap = partial(textwrap.wrap, width=width - len(line_prefix), initial_indent=line_prefix,
                    subsequent_indent=line_prefix)
 
     for line in processed.splitlines():
         if line:
-            wrapped_lines += cast(List[str], wrap(line))
+            wrapped_lines += wrap(line)
         else:
             # yeah, we could just append empty string but line_prefix could be any string, e.g. 'foo: '
             wrapped_lines.append(line_prefix)
@@ -310,14 +305,14 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
 
 def option_help(txt):
-    # type: (str) -> str
+    # type: (Text) -> Text
 
     """
     Given option help text, format it to be more suitable for command-line help.
     Options can provide a single line of text, or mutiple lines (using triple
     quotes and docstring-like indentation).
 
-    :param str txt: Raw option help text.
+    :param text txt: Raw option help text.
     :returns: Formatted option help text.
     """
 
@@ -331,14 +326,14 @@ def option_help(txt):
 
 
 def function_help(func, name=None):
-    # type: (Callable[..., Any], Optional[str]) -> Tuple[str, str]
+    # type: (Callable[..., Any], Optional[str]) -> Tuple[Text, Text]
 
     """
     Uses function's signature and docstring to generate a plain text help describing
     the function.
 
     :param callable func: Function to generate help for.
-    :param str name: If not set, ``func.__name__`` is used by default.
+    :param text name: If not set, ``func.__name__`` is used by default.
     :returns: ``(signature, body)`` pair.
     """
 
@@ -346,7 +341,7 @@ def function_help(func, name=None):
 
     # construct function signature
     # with Python 3 use getfullargspec instead of getargspec
-    if six.PY2:
+    if PY2:
         # pylint: disable=deprecated-method
         signature = inspect.getargspec(func)
     else:
@@ -354,7 +349,7 @@ def function_help(func, name=None):
 
     no_default = object()
 
-    defaults = []  # type: List[Union[str, object]]
+    defaults = []  # type: List[Union[Text, object]]
 
     # arguments that don't have default value are assigned our special value to let us tell the difference
     # between "no default" and "None is the default"
@@ -372,10 +367,10 @@ def function_help(func, name=None):
             args.append(C_ARGNAME(arg))
 
         else:
-            if isinstance(default, str):
+            if isinstance(default, six.text_type):
                 default = "'{}'".format(default)
 
-            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(str(default))))
+            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(six.text_type(default))))
 
     return (
         # signature
@@ -386,14 +381,14 @@ def function_help(func, name=None):
 
 
 def functions_help(functions):
-    # type: (List[Tuple[str, Callable[..., Any]]]) -> str
+    # type: (List[Tuple[str, Callable[..., Any]]]) -> Text
 
     """
     Generate help for a set of functions.
 
-    :param list(str, callable) functions: Functions to generate help for, passed as name
+    :param list(text, callable) functions: Functions to generate help for, passed as name
         and the corresponding callable pairs.
-    :rtype: str
+    :rtype: text
     :returns: Formatted help.
     """
 
@@ -403,11 +398,11 @@ def functions_help(functions):
 
     {{ body }}
     {% endfor %}
-    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions]).encode('ascii')
+    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions])
 
 
 def extract_eval_context_info(source, logger=None):
-    # type: (gluetool.glue.Configurable, Optional[gluetool.log.ContextAdapter]) -> Dict[str, str]
+    # type: (gluetool.glue.Configurable, Optional[gluetool.log.ContextAdapter]) -> Dict[Text, Text]
 
     """
     Extract information of evaluation context content from the ``source`` - a module
@@ -420,7 +415,7 @@ def extract_eval_context_info(source, logger=None):
     returns an empty dictionary.
 
     :param gluetool.glue.Configurable source: object to extract information from.
-    :rtype: dict(str, str)
+    :rtype: dict(Text, Text)
     """
 
     logger = logger or Logging.get_logger()
@@ -447,13 +442,13 @@ def extract_eval_context_info(source, logger=None):
 
     try:
         # get source code of the actual getter of the ``eval_context`` property
-        getter_source = inspect.getsource(eval_context.fget)
+        getter_source = inspect.getsource(eval_context.fget)  # type: ignore  # the actual property does have `fget`
 
         # it's indented - trim it like a docstring
-        getter_source = trim_docstring(getter_source)
+        getter_source_trimmed = trim_docstring(getter_source)
 
         # now, parse getter source, and create its AST
-        tree = ast.parse(getter_source)
+        tree = ast.parse(getter_source_trimmed)
 
         # find ``__content__ = { ...`` assignment inside the function
         # ``tree`` is the whole module, ``tree.body[0]`` is the function definition
@@ -506,7 +501,7 @@ def extract_eval_context_info(source, logger=None):
 
 
 def eval_context_help(source):
-    # type: (gluetool.glue.Configurable) -> str
+    # type: (gluetool.glue.Configurable) -> Text
 
     """
     Generate and format help for an evaluation context of a module. Looks for context content,
@@ -533,4 +528,4 @@ def eval_context_help(source):
 
 {{ description | indent(4, true) }}
 {% endfor %}
-""").render(CONTEXT=context_content).strip().encode('ascii')
+""").render(CONTEXT=context_content).strip()

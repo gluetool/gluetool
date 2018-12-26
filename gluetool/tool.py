@@ -12,7 +12,7 @@ import signal
 import sys
 import traceback
 
-from six import iteritems
+from six import ensure_text, iteritems
 
 import tabulate
 
@@ -29,7 +29,7 @@ from gluetool.utils import format_command_line, cached_property, normalize_path,
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Callable, List, Optional, NoReturn, Union  # noqa
+from typing import cast, Any, Callable, List, Optional, NoReturn, Text, Union  # noqa
 from types import FrameType  # noqa
 from gluetool.glue import PipelineReturnType  # noqa
 
@@ -74,28 +74,27 @@ class Gluetool(object):
         # pylint: disable=invalid-name
         self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
-        self.argv = None  # type: Optional[List[str]]
+        self.argv = None  # type: Optional[List[Text]]
         self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStepModule]]
 
     @cached_property
     def _version(self):
-        # type: () -> str
+        # type: () -> Text
 
         # pylint: disable=no-self-use
         from .version import __version__
 
-        return cast(str, __version__.strip())
+        return ensure_text(__version__.strip())
 
     @cached_property
     def _command_name(self):
-        # type: () -> str
+        # type: () -> Text
 
         # pylint: disable=no-self-use
         return 'gluetool'
 
     def _deduce_pipeline_desc(self, argv, modules):
         # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStepModule]
-
         # pylint: disable=no-self-use
 
         """
@@ -103,7 +102,7 @@ class Gluetool(object):
         by modules and their options.
 
         :param list argv: Remainder of :py:data:`sys.argv` after removing ``gluetool``'s own options.
-        :param list(str) modules: List of known module names.
+        :param list(text) modules: List of known module names.
         :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStepModule` instances.
         """
 
@@ -141,7 +140,7 @@ class Gluetool(object):
         # type: (List[Any], List[gluetool.glue.PipelineStepModule]) -> None
 
         cmdline = [
-            [sys.argv[0]] + argv
+            [ensure_text(sys.argv[0])] + argv
         ]
 
         for step in pipeline_desc:
@@ -286,7 +285,7 @@ class Gluetool(object):
         sigmap = {getattr(signal, name): name for name in [name for name in dir(signal) if name.startswith('SIG')]}
 
         def _signal_handler(signum, frame, handler=None, msg=None):
-            # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[str]) -> Any
+            # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[Text]) -> Any
 
             msg = msg or 'Signal {} received'.format(sigmap[signum])
 
@@ -324,7 +323,9 @@ class Gluetool(object):
         Glue.parse_args(sys.argv[1:])
 
         # store tool's configuration - everything till the start of "pipeline" (the first module)
-        self.argv = sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
+        self.argv = [
+            ensure_text(arg) for arg in sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
+        ]
 
         if Glue.option('pid'):
             Glue.info('PID: {} PGID: {}'.format(os.getpid(), os.getpgrp()))
@@ -359,7 +360,7 @@ class Gluetool(object):
             sys.exit(0)
 
         if Glue.option('list-shared'):
-            functions = []  # type: List[List[str]]
+            functions = []  # type: List[List[Text]]
 
             for mod_name in sorted(Glue.modules.iterkeys()):
                 functions += [

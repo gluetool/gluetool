@@ -7,11 +7,11 @@ will be fixed later.
 """
 
 import astroid
+import six
 
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
 
-import six
 
 BASE_ID = 76
 
@@ -76,7 +76,7 @@ class OptionNameMatchChecker(BaseChecker):
         from . import OptionsGatherer
         gatherer = OptionsGatherer.walk(node)
 
-        OPTION_NAMES[node.root().file] = gatherer.options.keys()
+        OPTION_NAMES[node.root().file] = list(six.iterkeys(gatherer.options))
 
     @utils.check_messages(MESSAGE_ID)
     def visit_call(self, node):

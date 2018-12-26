@@ -45,12 +45,14 @@ import traceback
 
 import jinja2
 import tabulate
+from six import PY2, ensure_binary, ensure_text, ensure_str
 
 from .color import Colors
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order, line-too-long
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
+from typing import TYPE_CHECKING, Any, AnyStr, Callable, Dict, Iterable, List, MutableMapping, Optional, Text, Tuple, Type, Union  # noqa
+from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
 from mypy_extensions import Arg, DefaultArg, NamedArg, DefaultNamedArg, VarArg, KwArg  # noqa
 
@@ -189,10 +191,10 @@ class StreamToLogger(object):
 
         self.log_fn = log_fn
 
-        self.linebuf = []  # type: List[str]
+        self.linebuf = []  # type: List[Text]
 
     def write(self, buf):
-        # type: (str) -> None
+        # type: (Text) -> None
 
         for c in buf:
             if ord(c) == ord('\n'):
@@ -208,7 +210,7 @@ class StreamToLogger(object):
 
 @contextlib.contextmanager  # type: ignore  # complains about incompatible type but I see no issue :/
 def print_wrapper(log_fn=None, label='print wrapper'):
-    # type: (Optional[LoggingFunctionType], Optional[str]) -> Iterable[None]
+    # type: (Optional[LoggingFunctionType], Optional[Text]) -> Iterable[None]
 
     """
     While active, replaces :py:data:`sys.stdout` and :py:data:`sys.stderr` streams with
@@ -216,7 +218,7 @@ def print_wrapper(log_fn=None, label='print wrapper'):
 
     :param call log_fn: A callback that is called for every line, produced by ``print``.
         If not set, a ``info`` method of ``gluetool`` main logger is used.
-    :param str label: short description, presented in the intro and outro headers, wrapping
+    :param text label: short description, presented in the intro and outro headers, wrapping
         captured output.
     """
 
@@ -239,17 +241,19 @@ def print_wrapper(log_fn=None, label='print wrapper'):
 
 
 def format_blob(blob):
-    # type: (str) -> str
+    # type: (AnyStr) -> Text
 
     """
     Format a blob of text for printing. Wraps the text with boundaries to mark its borders.
     """
 
-    return '{}\n{}\n{}'.format(BLOB_HEADER, blob, BLOB_FOOTER)
+    text_blob = ensure_text(blob)
+
+    return '{}\n{}\n{}'.format(BLOB_HEADER, text_blob, BLOB_FOOTER)
 
 
 def format_dict(dictionary):
-    # type: (Any) -> str
+    # type: (Any) -> Text
 
     """
     Format a Python data structure for printing. Uses :py:func:`json.dumps` formatting
@@ -259,7 +263,7 @@ def format_dict(dictionary):
     # Use custom "default" handler, to at least encode obj's repr() output when
     # json encoder does not know how to encode such class
     def default(obj):
-        # type: (Any) -> str
+        # type: (Any) -> Text
 
         return repr(obj)
 
@@ -283,7 +287,7 @@ def format_table(table, **kwargs):
 
 
 def format_xml(element):
-    # type: (bs4.BeautifulSoup) -> str
+    # type: (bs4.BeautifulSoup) -> Text
 
     """
     Format an XML element, e.g. Beaker job description, for printing.
@@ -291,7 +295,8 @@ def format_xml(element):
     :param element: XML element to format.
     """
 
-    prettyfied = element.prettify(encoding='utf-8')  # type: str
+    prettyfied = element.prettify()  # type: Text
+
     return prettyfied
 
 
@@ -337,7 +342,7 @@ def log_dict(writer, intro, data):
 
 
 def log_blob(writer, intro, blob):
-    # type: (LoggingFunctionType, str, str) -> None
+    # type: (LoggingFunctionType, str, AnyStr) -> None
 
     """
     Log "blob" of characters of unknown structure, e.g. output of a command or response
@@ -469,7 +474,9 @@ class ContextAdapter(logging.LoggerAdapter):
         super(ContextAdapter, self).__init__(logger, extra or {})  # type: ignore  # base class expects just Logger
 
         self._logger = logger
-        self.name = logger.name  # type: str
+
+        if PY2:
+            self.name = logger.name  # type: str
 
     def addHandler(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
@@ -715,7 +722,7 @@ class LoggingFormatter(logging.Formatter):
 
     @staticmethod
     def _format_exception_chain(exc_info):
-        # type: (Any) -> str
+        # type: (Any) -> Text
         """
         Format exception chain. Start with the one we're given, and follow its `caused_by` property
         until we ran out of exceptions to format.
@@ -723,15 +730,15 @@ class LoggingFormatter(logging.Formatter):
 
         tmpl = jinja2.Template(_TRACEBACK_TEMPLATE)
 
-        output = ['']
+        output = [u'']
 
         # Format one exception and its traceback
         def _add_block(label, exc, trace):
-            # type: (str, Exception, Any) -> None
+            # type: (Text, Exception, Any) -> None
 
             stack = _extract_stack(trace)
 
-            output.append(tmpl.render(label=label, exception=exc, stack=stack).encode('ascii'))
+            output.append(tmpl.render(label=label, exception=exc, stack=stack))
 
         # This is the most recent exception, we start with this one - it's often the one most visible,
         # exceptions that caused it are usualy hidden from user's sight.
@@ -763,7 +770,7 @@ class LoggingFormatter(logging.Formatter):
             'stamp': self.formatTime(record, datefmt='%H:%M:%S'),
             'level': LoggingFormatter._level_tags[record.levelno],
             'msg': record.getMessage()
-        }
+        }  # type: Dict[str, Text]
 
         handler_logs_traceback = self.log_tracebacks is True \
             or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))
@@ -773,7 +780,7 @@ class LoggingFormatter(logging.Formatter):
 
             # \n helps formatting - logging would add formatted chain right after the leading message
             # without starting new line. We must do it, to make report more readable.
-            values['exc_text'] = '\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
+            values['exc_text'] = u'\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
 
         # Handle context properties of the record
         def _add_context(context_name, context_value):
@@ -841,7 +848,7 @@ class JSONLoggingFormatter(logging.Formatter):
             # type: (Optional[BaseException], Optional[TracebackType]) -> None
 
             if exc:
-                exc_module, exc_class, exc_message = exc.__class__.__module__, exc.__class__.__name__, exc.message
+                exc_module, exc_class, exc_message = exc.__class__.__module__, exc.__class__.__name__, str(exc)
 
             else:
                 exc_module, exc_class, exc_message = '', '', ''
@@ -898,7 +905,7 @@ class JSONLoggingFormatter(logging.Formatter):
         if record.exc_info:
             JSONLoggingFormatter._format_exception_chain(serialized, record.exc_info)
 
-        return format_dict(serialized)
+        return ensure_str(format_dict(serialized))
 
 
 class Logging(object):

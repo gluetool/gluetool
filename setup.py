@@ -51,7 +51,7 @@ if __name__ == '__main__':
               'six==1.12.0',
               # newer versions bring way too many incompabilities, needs deeper inspection
               # 'ruamel.yaml==0.15.34',
-              'six==1.11.0',
+              'six==1.12.0',
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',

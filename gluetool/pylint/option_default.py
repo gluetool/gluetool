@@ -2,6 +2,8 @@
 Checker for option default values.
 """
 
+import six
+
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
 
@@ -108,7 +110,7 @@ class OptionDefaultChecker(BaseChecker):
         from . import OptionsGatherer
         gatherer = OptionsGatherer.walk(node)
 
-        for name, info in gatherer.options.iteritems():
+        for name, info in six.iteritems(gatherer.options):
             nodes, closest_node, params = info
 
             help_text = params.get('help', None)
