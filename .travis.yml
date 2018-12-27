@@ -2,10 +2,6 @@
 
 language: python
 
-python:
-  - "2.7"
-  - "3.6"
-
 # Paralellize by telling Travis what our matrix looks like - we reduce the actual command
 # to just calling `tox` with a single environment, specified by `TOX_ENV`, which is set
 # multiple times. Travis will take care of creating necessary threads.
