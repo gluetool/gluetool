@@ -5,6 +5,8 @@ import re
 import string
 
 import pytest
+import six
+
 from hypothesis import assume, given, strategies as st
 from . import create_file, create_json
 
@@ -52,6 +54,11 @@ def test_load(json_data, log, tmpdir):
 def test_error(tmpdir):
     filepath = create_file(tmpdir, 'test-error.json', lambda stream: stream.write('{'))
 
-    with pytest.raises(gluetool.GlueError,
-            match=r"(?ms)Unable to load JSON file '{}': Expecting property name enclosed in double quotes: line 1 column 2 \(char 1\)".format(re.escape(filepath))):
+    if six.PY3:
+        pattern = r"(?ms)Unable to load JSON file '{}': Expecting property name enclosed in double quotes: line 1 column 2 \(char 1\)".format(re.escape(filepath))
+
+    else:
+        pattern = r"(?ms)Unable to load JSON file '{}': Expecting object: line 1 column 1 \(char 0\)".format(re.escape(filepath))
+
+    with pytest.raises(gluetool.GlueError, match=pattern):
         print(load_json(filepath))

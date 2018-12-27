@@ -33,7 +33,7 @@ gluetool.glue.GlueError: Foo failed
 
 At {{ FILE }}:69, in baz:
 
-exceptions.ValueError: Z is really lame value
+{{ VALUE_ERROR_MODULE }}.ValueError: Z is really lame value
 
 
   File "{{ FILE }}", line 78, in foo
@@ -56,7 +56,7 @@ exceptions.ValueError: Z is really lame value
         z = 13
 
 ---\^---\^---\^---\^---\^---\^----------\^---\^---\^---\^---\^---\^---
-""").render(FILE=__file__)
+""").render(FILE=__file__, VALUE_ERROR_MODULE=ValueError.__module__)
 
 
 # Raise exception from a frame deeper in the stack, catch it and raise another
@@ -89,9 +89,10 @@ def test_sanity():
     except gluetool.GlueError as exc:
         excinfo = sys.exc_info()
 
-    # not assigning output of formatter to a local variable, we don't want it to appear in the top-level
-    # frame's list of locals, leading to a self-reference in expected output.
+        # not assigning output of formatter to a local variable, we don't want it to appear in the top-level
+        # frame's list of locals, leading to a self-reference in expected output.
 
-    # match lines one by one, using expected as a regex pattern
-    for l1, l2 in zip(EXPECTED.split('\n'), gluetool.log.LoggingFormatter._format_exception_chain(excinfo).split('\n')):
-        assert re.match('^' + l1 + '$', l2)
+        # match lines one by one, using expected as a regex pattern
+        print(gluetool.log.LoggingFormatter._format_exception_chain(excinfo))
+        for l1, l2 in zip(EXPECTED.split('\n'), gluetool.log.LoggingFormatter._format_exception_chain(excinfo).split('\n')):
+            assert re.match('^' + l1 + '$', l2)

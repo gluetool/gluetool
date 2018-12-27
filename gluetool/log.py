@@ -98,13 +98,13 @@ _TRACEBACK_TEMPLATE = """
 
 At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
 
-{{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception.message }}
+{{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception }}
 
 {% for filepath, lineno, fn, text, frame in stack %}
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
-    Local variables:{% for name in frame.f_locals.items() | sort %}
+    Local variables:{% for name in frame.f_locals.keys() | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
 {% endfor %}
@@ -1124,7 +1124,7 @@ class Logging(object):
             Logging.logger = logging.getLogger('gluetool')
 
             # setup all loggers we're interested in
-            map(Logging.configure_logger, Logging.OUR_LOGGERS)
+            list(map(Logging.configure_logger, Logging.OUR_LOGGERS))
 
         # set formatter
         Logging.stderr_handler.setFormatter(LoggingFormatter())
@@ -1161,16 +1161,16 @@ class Logging(object):
         # Enable Sentry
         Logging.enable_logger_sentry(logger)
 
-        map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS)
+        list(map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS))
 
         # Enable debug and verbose files
         Logging.enable_debug_file(logger)
         Logging.enable_verbose_file(logger)
         Logging.enable_json_file(logger)
 
-        map(Logging.enable_debug_file, Logging.OUR_LOGGERS)
-        map(Logging.enable_verbose_file, Logging.OUR_LOGGERS)
-        map(Logging.enable_json_file, Logging.OUR_LOGGERS)
+        list(map(Logging.enable_debug_file, Logging.OUR_LOGGERS))
+        list(map(Logging.enable_verbose_file, Logging.OUR_LOGGERS))
+        list(map(Logging.enable_json_file, Logging.OUR_LOGGERS))
 
         return logger
 

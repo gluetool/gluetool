@@ -153,12 +153,12 @@ def py_default_role(role, rawtext, text, lineno, inliner, options=None, content=
     Default handler we use for ``py:...`` roles, translates text to literal node.
     """
 
-    return [docutils.nodes.literal(rawsource=rawtext, text='{}'.format(text))], []  # type: ignore
+    return [docutils.nodes.literal(rawsource=rawtext, text='{}'.format(text))], []
 
 
 # register default handler for roles we're interested in
 for python_role in ('py:class', 'py:meth', 'py:mod'):
-    docutils.parsers.rst.roles.register_canonical_role(python_role, py_default_role)  # type: ignore
+    docutils.parsers.rst.roles.register_canonical_role(python_role, py_default_role)
 
 
 def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context=None):
@@ -174,10 +174,10 @@ def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context
     if target and target[0] == '/':
         target = 'docs/source/{}.rst'.format(target[1:])
 
-    return [docutils.nodes.literal(rawsource=text, text='{} (See {})'.format(title, target))], []  # type: ignore
+    return [docutils.nodes.literal(rawsource=text, text='{} (See {})'.format(title, target))], []
 
 
-docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)  # type: ignore  # `roles` does exist
+docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)
 
 
 class DummyTextBuilder:
@@ -425,7 +425,7 @@ def extract_eval_context_info(source, logger=None):
     # Cannot do "source.eval_context" because we'd get the value of property, which
     # is usualy a dict. We cannot let it evaluate and return the value, therefore
     # we must get it via its parent class.
-    eval_context = source.__class__.eval_context  # type: ignore  # operating on Module classes, eval_context exists
+    eval_context = source.__class__.eval_context
 
     # this is not a cyclic import, yet pylint thinks so :/
     # pylint: disable=cyclic-import

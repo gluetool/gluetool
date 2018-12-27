@@ -14,7 +14,9 @@ import ast
 
 from functools import partial
 
-from six import ensure_str, iterkeys, iteritems, reraise, string_types
+import jinja2
+import six
+from six import ensure_str, ensure_text, iterkeys, iteritems, reraise, string_types
 from six.moves import configparser
 
 import jinja2
@@ -241,8 +243,9 @@ class GlueCommandError(GlueError):
     def __init__(self, cmd, output, **kwargs):
         # type: (List[Text], gluetool.utils.ProcessOutput, **Any) -> None
 
-        super(GlueCommandError, self).__init__("Command '{}' failed with exit code {}".format(cmd, output.exit_code),
-                                               **kwargs)
+        super(GlueCommandError, self).__init__("Command '{}' failed with exit code {}".format(
+            [ensure_str(s) for s in cmd], output.exit_code
+        ), **kwargs)
 
         self.cmd = cmd
         self.output = output
@@ -987,17 +990,17 @@ class Configurable(LoggerMixin, object):
         def _verify_option(name, names, params):
             # type: (Text, List[Text], Dict[Text, Any]) -> None
 
-            if isinstance(names, six.text_type):
-                self._config[name] = None
+            if isinstance(names, six.string_types):
+                self._config[ensure_text(name)] = None
 
             elif isinstance(names, tuple):
-                if not isinstance(names[0], six.text_type) or len(names[0]) != 1:
+                if not isinstance(names[0], six.string_types) or len(names[0]) != 1:
                     _fail_name(name)
 
-                if not isinstance(names[1], six.text_type) or len(names[1]) < 2:
+                if not isinstance(names[1], six.string_types) or len(names[1]) < 2:
                     _fail_name(name)
 
-                self._config[name] = None
+                self._config[ensure_text(name)] = None
 
             else:
                 _fail_name(name)

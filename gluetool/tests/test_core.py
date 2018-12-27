@@ -10,7 +10,7 @@ from mock import MagicMock
 
 
 def test_check_for_commands():
-    commands = ('ls', 'gzip')
+    commands = (u'ls', u'gzip')
 
     # these should exist...
     for cmd in commands:

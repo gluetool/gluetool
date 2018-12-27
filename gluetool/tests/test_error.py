@@ -2,6 +2,8 @@ import string
 import types
 
 import pytest
+import six
+
 from mock import MagicMock
 from hypothesis import example, given, strategies as st
 
@@ -100,7 +102,9 @@ def test_command_error(cmd, exit_code):
     assert isinstance(exc, GlueError)
     assert exc.cmd == cmd
     assert exc.output == mock_output
-    assert str(exc) == "Command '{}' failed with exit code {}".format(cmd, exit_code)
+    assert six.text_type(exc) == u"Command '{}' failed with exit code {}".format(
+        [six.ensure_str(s) for s in cmd], exit_code
+    )
 
 
 # Simulate module by a simple integer - it's not touched by Failure, therefore it's quite fine.

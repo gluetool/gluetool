@@ -51,16 +51,13 @@ if TYPE_CHECKING:
 T = TypeVar('T')
 
 
-try:
-    # pylint: disable=ungrouped-imports
-    from subprocess import DEVNULL  # type: ignore
+if PY2:
+    DEVNULL = io.open(os.devnull, 'wb')
 
-except ImportError:
-    if PY2:
-        DEVNULL = io.open(os.devnull, 'wb')
-
-    else:
-        assert False, 'Python 3 should have subprocess.DEVNULL!'
+else:
+    # In runtime, it is guarder by `PY2`, but Python 2 Pylint still checks it, and there's no `DEVNULL`
+    # in Python 2... Hence disabling `no-name-in-module`.
+    from subprocess import DEVNULL  # pylint: disable=ungrouped-imports,no-name-in-module
 
 
 def deprecated(func):
@@ -677,7 +674,7 @@ class Command(LoggerMixin, object):
 
         except OSError as e:
             if e.errno == errno.ENOENT:
-                raise GlueError("Command '{}' not found".format(self._command[0]))
+                raise GlueError("Command '{}' not found".format(ensure_str(self._command[0])))
 
             raise e
 
@@ -707,7 +704,7 @@ def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs
         Use :py:class:`gluetool.utils.Command` instead.
     """
 
-    return Command(cmd, logger=logger).run(**kwargs)  # type: ignore  # keyword args
+    return Command(cmd, logger=logger).run(**kwargs)
 
 
 def check_for_commands(cmds):
@@ -717,10 +714,10 @@ def check_for_commands(cmds):
 
     for cmd in cmds:
         try:
-            Command(['/bin/bash', '-c', 'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
+            Command([u'/bin/bash', u'-c', u'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
 
         except GlueError:
-            raise GlueError("Command '{}' not found on the system".format(cmd))
+            raise GlueError("Command '{}' not found on the system".format(ensure_str(cmd)))
 
 
 class cached_property(object):
@@ -872,7 +869,7 @@ def requests(logger=None):
     logger = logger or Logging.get_logger()
 
     http_client_logger = PackageAdapter(logger, 'httplib') if PY2 else PackageAdapter(logger, 'http_client')
-    http_client.HTTPConnection.debuglevel = 1  # type: ignore  # `debuglevel` does exist
+    http_client.HTTPConnection.debuglevel = 1  # type: ignore
 
     # Start capturing ``print`` statements - they are used to provide debug messages, therefore
     # using ``debug`` level.
@@ -914,7 +911,7 @@ def requests(logger=None):
                 setattr(original_requests, method_name, original_method)
 
             # ... and disable http_client debugging
-            http_client.HTTPConnection.debuglevel = 0  # type: ignore  # `debuglevel` does exist
+            http_client.HTTPConnection.debuglevel = 0  # type: ignore
 
 
 def treat_url(url, logger=None):

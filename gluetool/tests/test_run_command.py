@@ -36,8 +36,12 @@ def test_invalid_cmd():
     with pytest.raises(gluetool.GlueError, match=r'^Only list of strings is accepted$'):
         Command('/bin/ls').run()
 
+    # These yield different string in Python 3 and Python 2 - "class ..." vs "type ..."
+    type_str = str(type(''))
+    type_int = str(type(1))
+
     with pytest.raises(gluetool.GlueError,
-                       match=r"^Only list of strings is accepted, \[\('/bin/ls', <type 'str'>\), \(13, <type 'int'>\)\] found$"):
+                       match=r"^Only list of strings is accepted, \[\('/bin/ls', {}\), \(13, {}\)\] found$".format(type_str, type_int)):
         Command(['/bin/ls', 13]).run()
 
 
@@ -63,7 +67,7 @@ def test_sanity(popen, log):
 
     popen.return_value.communicate.return_value = ('root listing', '')
 
-    command = ['/bin/ls', '/']
+    command = [u'/bin/ls', u'/']
     output = Command(command).run()
 
     assert output.exit_code == 0
@@ -93,7 +97,7 @@ def test_oserror(popen, log, actual_errno, expected_exc, expected_message):
 
     popen.side_effect = throw
 
-    command = ['/bin/foo']
+    command = [u'/bin/foo']
 
     with pytest.raises(expected_exc, match=r'^{}$'.format(expected_message)):
         Command(command).run()
@@ -108,7 +112,7 @@ def test_exit_code_error(popen, log):
 
     popen.return_value.poll.return_value = 1
 
-    command = ['/bin/foo']
+    command = [u'/bin/foo']
 
     with pytest.raises(gluetool.GlueCommandError, match=r"^Command '\['/bin/foo'\]' failed with exit code 1$") \
             as excinfo:
@@ -133,7 +137,7 @@ def test_std_streams_mix(popen, log):
         'This goes to stderr\n'
     )
 
-    command = ['/bin/foo']
+    command = [u'/bin/foo']
 
     output = Command(command).run()
 
@@ -197,7 +201,7 @@ def test_forwarding(popen, log, actual_comm, stdout, stderr):
 
     popen.return_value.communicate.return_value = actual_comm
 
-    command = ['/bin/foo']
+    command = [u'/bin/foo']
 
     output = Command(command).run(stdout=stdout_arg, stderr=stderr_arg)
 
@@ -238,7 +242,7 @@ def test_invalid_stdout(popen, log):
 
     popen.side_effect = throw
 
-    command = ['/bin/foo']
+    command = [u'/bin/foo']
 
     with pytest.raises(AttributeError, match=r"^'tuple' object has no attribute 'fileno'$"):
         Command(command).run(stdout=(13, 17))

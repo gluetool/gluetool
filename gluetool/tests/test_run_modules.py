@@ -3,6 +3,7 @@
 import inspect
 import pytest
 
+import six
 from mock import MagicMock
 
 import gluetool
@@ -158,10 +159,47 @@ def test_pipeline_sanity(pipeline, monkeypatch):
     pipeline.modules[0].sanity.assert_called_once_with()
     pipeline.modules[0].check_required_options.assert_called_once_with()
 
+def _extract_method_module(glue):
+    """
+    Extract module that contains the shared function ``foo``.
+    """
+
+    # And it should be foo of our dummy module class, i.e. foo's im_class member, as reported by
+    # inspect, should be the DummyModule class - in Python 2. In Python 3, we can find member named
+    # `__self__`. So, find the correct members, and extract module class into a list. DummyModule
+    # should be its first (and only) member.
+    foo = glue.get_shared('foo')
+
+    if six.PY3:
+        # In Python 3, method is of class `method` and has a member named `__self__` which
+        # is the module instance.
+
+        modules = [
+            member[1].__class__ for member in inspect.getmembers(foo) if member[0] == '__self__'
+        ]
+
+    else:
+        # In Python 2, there's a member named `im_class` which is what we're looking for.
+
+        modules = [
+            member[1] for member in inspect.getmembers(glue.get_shared('foo'), inspect.isclass) if member[0] == 'im_class'
+        ]
+
+    assert len(modules) == 1
+
+    return modules[0]
+
+def test_add_shared(glue):
+    glue.run_modules([gluetool.glue.PipelineStep('Dummy module')])
+
 
 def test_pipeline_execute(pipeline, monkeypatch):
     pipeline._setup()
     pipeline._sanity()
+
+    # And it should be foo of our dummy module class.
+
+    assert _extract_method_module(glue) is DummyModule
 
     monkeypatch.setattr(pipeline.modules[0], 'execute', MagicMock())
 
@@ -275,3 +313,5 @@ def test_module_has_shared(module, monkeypatch):
 
     assert module.has_shared('foo') == 17
     module.glue.has_shared.assert_called_once_with('foo')
+
+    assert _extract_method_module(glue) is BrokenModule
