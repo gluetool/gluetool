@@ -26,7 +26,7 @@ import requests as original_requests
 
 # Python 2/3 compatibility
 import six
-from six import PY2, ensure_str, ensure_text, iteritems
+from six import PY2, ensure_str, ensure_text, iteritems, iterkeys
 from six.moves import http_client, urllib
 
 # Don't know why pylint reports "Relative import 'ruamel.yaml', should be 'gluetool.ruamel.yaml'" :(
@@ -1252,7 +1252,7 @@ class SimplePatternMap(LoggerMixin, object):
             if not isinstance(pattern_dict, dict):
                 raise GlueError("Invalid format: '- <pattern>: <result>' expected, '{}' found".format(pattern_dict))
 
-            pattern = list(pattern_dict.keys())[0]
+            pattern = next(iterkeys(pattern_dict))
             result = pattern_dict[pattern].strip()
 
             # Apply variables if requested.
@@ -1401,7 +1401,7 @@ class PatternMap(LoggerMixin, object):
                 raise GlueError("Invalid format: '- <pattern>: <transform>' expected, '{}' found".format(pattern_dict))
 
             # There is always just a single key, the pattern.
-            pattern_key = list(pattern_dict.keys())[0]
+            pattern_key = next(iterkeys(pattern_dict))
 
             # Apply variables if requested.
             pattern = _render_template(pattern_key)
