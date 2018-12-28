@@ -3,7 +3,7 @@ import operator
 
 from packaging.version import Version
 
-from six import iteritems
+from six import iteritems, itervalues
 
 import gluetool
 
@@ -56,7 +56,7 @@ class ModuleInfoGroup(object):
             'pip': [],
             'ansible_tasks': []
         }
-        for moduleinfo in self.items.values():
+        for moduleinfo in itervalues(self.items):
             if only_modules and moduleinfo.name not in only_modules:
                 self.logger.debug("Skip module '{}'".format(moduleinfo.name))
                 continue

@@ -1,10 +1,9 @@
-from __future__ import print_function
-
 import collections
+import sys
 
 import jinja2
 
-from six import iteritems
+from six import iterkeys, iteritems
 
 import gluetool
 import gluetool.utils
@@ -49,6 +48,7 @@ _{{ GLUE.tool._command_name }}()
     fi
 }
 complete -F _{{ GLUE.tool._command_name }} {{ GLUE.tool._command_name }}
+
 """
 
 
@@ -91,7 +91,7 @@ class BashCompletion(gluetool.Module):
             Configurable._for_each_option(_add_option, options)
 
         # Inspect all option groups defined by the module, and add every option found
-        for module_name in self.glue.modules.iterkeys():
+        for module_name in iterkeys(self.glue.modules):
             Configurable._for_each_option_group(_add_options_from_group,
                                                 self.glue.modules[module_name]['class'].options)
 
@@ -105,4 +105,5 @@ class BashCompletion(gluetool.Module):
             name: options + ['-h', '--help'] for name, options in iteritems(module_options)
         }
 
-        print(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue, MODULE_OPTIONS=module_options))
+        sys.stdout.write(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue,
+                                                                          MODULE_OPTIONS=module_options))
