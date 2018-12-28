@@ -523,7 +523,7 @@ def eval_context_help(source):
     return jinja2.Template("""
 {{ '** Evaluation context **' | style(fg='yellow') }}
 
-{% for name, description in CONTEXT.iteritems() %}
+{% for name, description in iteritems(CONTEXT) %}
   * {{ name | style(fg='blue') }}
 
 {{ description | indent(4, true) }}

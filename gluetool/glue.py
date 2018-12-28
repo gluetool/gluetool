@@ -77,6 +77,15 @@ DEFAULT_MODULE_PATHS = [
 #
 
 
+# Install workarounds from Six - this makes templates compatible with both Python 2 and 3 when it comes
+# to iterating over dictionaries.
+jinja2.defaults.DEFAULT_NAMESPACE.update({
+    'iteritems': six.iteritems,
+    'iterkeys': six.iterkeys,
+    'itervalues': six.itervalues
+})
+
+
 class DryRunLevels(enum.IntEnum):
     """
     Dry-run levels.
@@ -2299,11 +2308,12 @@ class Glue(Configurable):
                 if not filename.endswith('.py'):
                     continue
 
-                # A group of the module is defined by the directories it lies in under the ``dirpath``.
-                if root == dirpath:
-                    group_name = ''
-                else:
-                    group_name = root.replace(dirpath + os.sep, '')
+                self.modules[mname] = {
+                    'class': cls,
+                    'filepath': filepath,
+                    'description': cls.description,
+                    'group': group
+                }
 
                 pm_name = '{}.{}.{}'.format(
                     pm_prefix,
