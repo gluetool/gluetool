@@ -14,7 +14,7 @@ from gluetool.log import format_dict
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Dict, Iterable, Optional, Union
+from typing import cast, Any, Dict, Iterable, Optional, Union  # noqa
 
 
 NOT_WHITESPACE = re.compile(r'[^\s]')
