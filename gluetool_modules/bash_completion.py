@@ -15,7 +15,7 @@ BASH_COMPLETION_TEMPLATE = """
 _{{ GLUE.tool._command_name }}()
 {
     local cur prev
-    local modules {% for module_name in MODULE_OPTIONS.iterkeys() | sort %} {{ module_name | replace('-', '_') }}_opts {% endfor %}
+    local modules {% for module_name in iterkeys(MODULE_OPTIONS) | sort %} {{ module_name | replace('-', '_') }}_opts {% endfor %}
     local index=COMP_CWORD-1
 
     COMPREPLY=()
@@ -29,12 +29,12 @@ _{{ GLUE.tool._command_name }}()
     done
 
     modules="{{ GLUE.modules.keys() | sort | join(' ') }}"
-    {% for module_name, module_options in MODULE_OPTIONS.items() | sort %}
+    {% for module_name, module_options in iteritems(MODULE_OPTIONS) | sort %}
     {{ module_name | replace('-', '_') }}_opts="{{ module_options | sort | join(' ') }}"
     {%- endfor %}
 
     if [[ ${cur} == -* ]] ; then
-        {% for module_name in MODULE_OPTIONS.iterkeys() | sort %}
+        {% for module_name in iterkeys(MODULE_OPTIONS) | sort %}
             if [[ ${prev} == {{ module_name }} ]]; then
                 COMPREPLY=( $(compgen -W "${{ module_name | replace('-', '_') }}_opts" -- ${cur}) )
                 return 0
