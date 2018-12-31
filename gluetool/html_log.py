@@ -126,6 +126,12 @@ TEMPLATE = """
 
             {#Traceback #}
             <table class="ui celled table">
+              <thead class="full-width">
+                <tr>
+                  <th colspan="2">Traceback</th>
+                </tr>
+              </thead>
+
               {% for frame in traceback %}
                 <tr>
                   <td>
