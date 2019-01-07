@@ -234,6 +234,7 @@ def _code_filter(ctx, value, syntax, apply_format=False, line_numbers=False, lin
     """
     Generic filter to highlight the code. Emits tags and content to employ Prism to do the highlighting.
 
+    :param ctx: render context governed by Jinja.
     :param value: text or actual data structure to highlight as code.
     :param str syntax: what syntax to use for highlighting, e.g. ``python``.
     :param bool apply_format: if set, ``format_dict`` is called to pretty-print the structure in ``value``.
@@ -273,6 +274,7 @@ def _snippet_filter(ctx, filepath, lineno, syntax, window=10):
     """
     Generic filter providing snippet of the code from a source file, including the highlight.
 
+    :param ctx: render context governed by Jinja.
     :param str filepath: source file.
     :param int lineno: important line we want to highligh.
     :param str syntax: what syntax to use for highlighting, e.g. ``python``.
@@ -299,6 +301,9 @@ def file_content_filter(ctx, value):
     # pylint: disable=unused-argument
     """
     Return content of the given file.
+
+    :param ctx: render context governed by Jinja.
+    :param str value: path to a file to include.
     """
 
     with io.open(value, 'r') as f:
@@ -313,6 +318,9 @@ def message_filter(ctx, value):
 
     * spaces are replaced with non-breakable spaces (``&nbsp;``);
     * new-line characters are replaced with ``<br/>`` elements.
+
+    :param ctx: render context governed by Jinja.
+    :param str value: message to escape.
     """
 
     result = value.replace('\n', cast(str, Markup('<br/>\n'))).replace(' ', cast(str, Markup('&nbsp;')))
@@ -328,6 +336,9 @@ def json_filter(ctx, value):
     # type: (Any, str) -> Union[str, Markup]
     """
     Return highlighted JSON code.
+
+    :param ctx: render context governed by Jinja.
+    :param str value: JSON snippet to highlight.
     """
 
     return _code_filter(ctx, value, 'json', apply_format=True)
@@ -343,6 +354,12 @@ def json_filter(ctx, value):
 @jinja2.evalcontextfilter  # type: ignore
 def python_snippet_filter(ctx, filepath, lineno):
     # type: (Any, str, int) -> Union[str, Markup]
+    """
+    :param ctx: render context governed by Jinja.
+    :param str filepath: source file.
+    :param int lineno: line to highlight.
+    """
+
     return _snippet_filter(ctx, filepath, lineno, 'python')
 
 
