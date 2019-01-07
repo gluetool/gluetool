@@ -289,6 +289,19 @@ class PipelineStep(object):
 
         return self.module if self.module == self.actual_module else '{}:{}'.format(self.module, self.actual_module)
 
+    def serialize_to_json(self):
+        # type: () -> Dict[str, Any]
+
+        return {
+            field: getattr(self, field) for field in ('module', 'actual_module', 'argv')
+        }
+
+    @classmethod
+    def unserialize_from_json(cls, serialized):
+        # type: (Dict[str, Any]) -> PipelineStep
+
+        return PipelineStep(serialized['module'], actual_module=serialized['actual_module'], argv=serialized['argv'])
+
 
 class ArgumentParser(argparse.ArgumentParser):
     """
@@ -1374,11 +1387,13 @@ class Glue(Configurable):
 
         # pylint: disable=unused-variable
         __content__ = {  # noqa
-            'ENV': 'Dictionary representing environment variables.'
+            'ENV': 'Dictionary representing environment variables.',
+            'PIPELINE': 'Current pipeline, represented as a list of ``PipelineStep`` instances.'
         }
 
         return {
-            'ENV': dict(os.environ)
+            'ENV': dict(os.environ),
+            'PIPELINE': self.current_pipeline
         }
 
     def _eval_context_module_caller(self):
@@ -1695,6 +1710,7 @@ class Glue(Configurable):
         self._dryrun_level = DryRunLevels.DEFAULT
 
         self.current_module = None  # type: Optional[Module]
+        self.current_pipeline = None  # type: Optional[List[PipelineStep]]
 
         # module types dictionary
         self.modules = {}  # type: Dict[str, Dict[str, Any]]
@@ -1827,6 +1843,7 @@ class Glue(Configurable):
         self._for_each_module(reversed(cast(Sequence[Module], self._module_instances)), _destroy)
 
         self.current_module = None
+        self.current_pipeline = None
         self._module_instances = []
 
     def init_module(self, module_name, actual_module_name=None):
@@ -1860,6 +1877,8 @@ class Glue(Configurable):
         """
 
         log_dict(self.debug, 'running a pipeline', pipeline_desc)
+
+        self.current_pipeline = pipeline_desc
 
         modules = []
 
@@ -1909,6 +1928,7 @@ class Glue(Configurable):
         self._for_each_module(modules, _execute)
 
         self.current_module = None
+        self.current_pipeline = None
 
     def run_module(self, module_name, module_argv=None, actual_module_name=None, register=False):
         # type: (str, Optional[List[str]], Optional[str], Optional[bool]) -> Any
