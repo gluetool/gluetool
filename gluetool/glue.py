@@ -413,6 +413,11 @@ class Configurable(object):
     it must be declared here to make pylint happy :/
     """
 
+    def __repr__(self):
+        # type: () -> str
+
+        return '<Module {}:{}>'.format(self.unique_name, self.name)
+
     @staticmethod
     def _for_each_option(callback, options):
         # type: (Callable[..., None], Any) -> None

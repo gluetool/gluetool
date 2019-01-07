@@ -12,7 +12,8 @@ if __name__ == '__main__':
           ],
           entry_points={
               'console_scripts': [
-                  'gluetool = gluetool.tool:main'
+                  'gluetool = gluetool.tool:main',
+                  'gluetool-html-log = gluetool.html_log:main'
               ]
           },
           data_files=[
@@ -23,6 +24,12 @@ if __name__ == '__main__':
                   'gluetool_modules/dep_list.moduleinfo',
                   'gluetool_modules/yaml_pipeline.py',
                   'gluetool_modules/yaml_pipeline.moduleinfo'
+              ]),
+              ('assets/html-log', [
+                  'assets/html-log/prism.css',
+                  'assets/html-log/prism.js',
+                  'assets/html-log/semantic.min.css',
+                  'assets/html-log/semantic.min.js'
               ])
           ],
           install_requires=[

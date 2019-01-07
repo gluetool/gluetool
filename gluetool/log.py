@@ -417,7 +417,8 @@ def log_dict(writer, intro, data):
     """
 
     writer('{}:\n{}'.format(intro, format_dict(data)), extra={
-        'raw-struct': data
+        'raw_intro': intro,
+        'raw_struct': data
     })
 
 
@@ -440,7 +441,8 @@ def log_blob(writer, intro, blob):
     """
 
     writer("{}:\n{}".format(intro, format_blob(blob)), extra={
-        'raw-blob': blob
+        'raw_intro': intro,
+        'raw_blob': blob
     })
 
 
@@ -456,7 +458,8 @@ def log_xml(writer, intro, element):
     """
 
     writer("{}:\n{}".format(intro, format_xml(element)), extra={
-        'raw-xml': element
+        'raw_intro': intro,
+        'raw_xml': element
     })
 
 
@@ -791,7 +794,12 @@ class JSONLoggingFormatter(logging.Formatter):
                         'lineno': lineno,
                         'fnname': fnname,
                         'text': text,
-                        'locals': frame.f_locals
+                        'locals': {
+                            local_var_name: {
+                                'type': type(local_var_value),
+                                'value': local_var_value
+                            } for local_var_name, local_var_value in frame.f_locals.iteritems()
+                        }
                     }
                     for filename, lineno, fnname, text, frame in stack
                 ]
@@ -816,7 +824,7 @@ class JSONLoggingFormatter(logging.Formatter):
                 'lineno', 'module', 'msecs', 'msg', 'name', 'pathname', 'process', 'processName',
                 'relativeCreated', 'thread', 'threadName',
                 # our custom fields
-                'raw-blob', 'raw-struct', 'raw-xml'
+                'raw_blob', 'raw_struct', 'raw_xml', 'raw_intro'
             )
         }
 
