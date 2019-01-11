@@ -3,7 +3,7 @@ import types
 
 import pytest
 from mock import MagicMock
-from hypothesis import example, given, strategies as st
+from hypothesis import assume, example, given, strategies as st
 
 import gluetool
 from gluetool import GlueError
@@ -63,11 +63,32 @@ def test_caused_by_detect():
 def test_sentry_fingerprint(current):
     assert GlueError('').sentry_fingerprint(current) == current
 
+# sentry_fingerprint argument must be propagated
+@given(current=st.lists(st.text(string.printable)), explicit=st.lists(st.text(string.printable)))
+def test_sentry_fingerprint(current, explicit):
+    if not explicit:
+        assert GlueError('', sentry_fingerprint=explicit).sentry_fingerprint(current) is current
+
+    else:
+        assert GlueError('', sentry_fingerprint=explicit).sentry_fingerprint(current) == ['GlueError'] + explicit
+
 
 # sentry_tags works with dict(str, str)
 @given(current=st.dictionaries(st.text(string.printable), st.text(string.printable)))
 def test_sentry_tags(current):
     assert GlueError('').sentry_tags(current) == current
+
+
+# sentry_tags argument must be propagated
+@given(current=st.dictionaries(st.text(string.printable), st.text(string.printable)),
+       explicit=st.dictionaries(st.text(string.printable), st.text(string.printable)))
+@example({'foo': 'bar'}, None)
+def test_sentry_tags(current, explicit):
+    expected = current.copy()
+    if explicit:
+        expected.update(explicit)
+
+    assert GlueError('', sentry_tags=explicit).sentry_tags(current) == expected
 
 
 @given(cmd=st.lists(st.text(string.printable)), exit_code=st.integers())

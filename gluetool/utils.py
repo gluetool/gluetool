@@ -1500,7 +1500,7 @@ class PatternMap(object):
                 converter(pattern, s) for converter in converters
             ]
 
-        raise GlueError("Could not match string '{}' with any pattern".format(s))
+        raise GlueError("Could not match string '{}' with any pattern".format(s), sentry_fingerprint=[s])
 
 
 def wait(label, check, timeout=None, tick=30, logger=None):
