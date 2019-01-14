@@ -1148,18 +1148,18 @@ def load_json(filepath, logger=None):
         raise GlueError("Unable to load JSON file '{}': {}".format(filepath, str(exc)))
 
 
-def _load_yaml_variables(data, enabled=True, logger=None):
+def load_yaml_variables(data, enabled=True, logger=None):
     # type: (Any, bool, Optional[ContextAdapter]) -> Callable[[str], Union[str, List[str]]]
     """
     Load all variables from files referenced by a YAML, and return function to render a string
     as a template using these variables. The files containing variables are mentioned in comments,
-    in a form ``# !include <filepath>`` form.
+    in a ``# !include <filepath>`` form.
 
     :param data: data loaded from a YAML file.
     :param bool enabled: when set to ``False``, variables are not loaded and a simple no-op
         function is returned.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
-    :returns: Function accepting a string and returning a rendered template.
+    :returns: Function accepting a string and returning a rendered - or not, with ``enabled=False`` - template.
     """
 
     logger = logger or Logging.get_logger()
@@ -1255,7 +1255,7 @@ class SimplePatternMap(object):
         if pattern_map is None:
             raise GlueError("pattern map '{}' does not contain any patterns".format(filepath))
 
-        _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
+        _render_template = load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         self._compiled_map = []  # type: List[Tuple[Pattern, str]]
 
@@ -1391,7 +1391,7 @@ class PatternMap(object):
         if pattern_map is None:
             raise GlueError("pattern map '{}' does not contain any patterns".format(filepath))
 
-        _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
+        _render_template = load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         def _create_simple_repl(repl):
             # type: (str) -> Callable[[Pattern, str], str]
