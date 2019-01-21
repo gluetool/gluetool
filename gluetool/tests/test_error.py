@@ -3,7 +3,7 @@ import types
 
 import pytest
 from mock import MagicMock
-from hypothesis import assume, example, given, strategies as st
+from hypothesis import example, given, strategies as st
 
 import gluetool
 from gluetool import GlueError
