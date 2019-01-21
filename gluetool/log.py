@@ -375,7 +375,7 @@ def format_table(table, **kwargs):
     """
     Format a table, represented by an iterable of rows, represented by iterables.
 
-    Internally, ``tabulate`` is used to do the formatting. All keyword areguments are passed
+    Internally, ``tabulate`` is used to do the formatting. All keyword arguments are passed
     to ``tabulate`` call.
 
     :param list(list()) table: table to format.
