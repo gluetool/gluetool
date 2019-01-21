@@ -300,7 +300,7 @@ def file_content_filter(ctx, value):
     # type: (Any, str) -> Union[str, Markup]
     # pylint: disable=unused-argument
     """
-    Return content of the given file. File path imust be relative to an assets directory
+    Return content of the given file. File path must be relative to an assets directory
     set by ``--assets`` option.
 
     :param ctx: render context governed by Jinja.
