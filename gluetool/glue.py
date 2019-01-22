@@ -69,6 +69,10 @@ class GlueError(Exception):
         the exception that caused this one to be born. If not set, constructor will try to auto-detect
         this information, and if there's no such information, instance property ``caused_by`` will be
         set to ``None``.
+    :param list(str) sentry_fingerprint: if set, it is used as a Sentry fingerprint of the exception. See
+        :py:meth:`sentry_fingerprint` for more details.
+    :param dict(str, str) sentry_tags: if set, it is merged with other tags when submitting the exception.
+        See :py:meth:`sentry_tags` for more details.
 
     :ivar str message: Exception message, describing what happened.
     :ivar tuple caused_by: If set, contains tuple as returned by :py:func:`sys.exc_info`, describing
@@ -77,12 +81,15 @@ class GlueError(Exception):
 
     no_sentry_exceptions = []  # type: List[str]
 
-    def __init__(self, message, caused_by=None, **kwargs):
-        # type: (str, Optional[ExceptionInfoType], **Any) -> None
+    def __init__(self, message, caused_by=None, sentry_fingerprint=None, sentry_tags=None, **kwargs):
+        # type: (str, Optional[ExceptionInfoType], Optional[List[str]], Optional[Dict[str, str]], **Any) -> None
 
         super(GlueError, self).__init__(message, **kwargs)  # type: ignore  # too many arguments but it's fine
 
         self.message = message
+
+        self._sentry_fingerprint = sentry_fingerprint
+        self._sentry_tags = sentry_tags
 
         # if not told explicitly, try to detect the cause
         if caused_by is None:
@@ -130,11 +137,20 @@ class GlueError(Exception):
         let's say ``[<exception class name>, <remote IP>]``, and Sentry will group events
         using this fingerprint.
 
+        If the exception was raised with ``sentry_fingerprint`` parameter set, it is returned
+        instead of ``current``, after prefixing the list of tags with a name of the exception's
+        class.
+
         :param list(str) current: current fingerprint. Usually ``['{{ default }}']`` telling
             Sentry to use its default method, but it could already be more specific.
         :rtype: list(str)
         :returns: new fingerprint, e.g. ``['FailedToConnectToAPI', '10.20.30.40']``
         """
+
+        if self._sentry_fingerprint:
+            return [
+                self.__class__.__name__
+            ] + self._sentry_fingerprint
 
         return current
 
@@ -149,11 +165,17 @@ class GlueError(Exception):
         Most common usage would be an addition of tags, e.g. ``remote-host`` to allow search
         for events related to the same remote address.
 
+        If the exception was raised with ``sentry_tags`` parameter set, its value is injected
+        to ``current`` before returning it.
+
         :param dict(str, str) current: current set of tags and their values.
         :rtype: dict(str, str)
         :returns: new set of tags. It is possible to add tags directly into ``current`` and
             then return it.
         """
+
+        if self._sentry_tags:
+            current.update(self._sentry_tags)
 
         return current
 
