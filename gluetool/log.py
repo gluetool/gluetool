@@ -50,12 +50,13 @@ import time
 import traceback
 
 import jinja2
+import tabulate
 
 from .color import Colors
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order, line-too-long
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
 from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
 
@@ -368,6 +369,22 @@ def format_dict(dictionary):
     return json.dumps(dictionary, sort_keys=True, indent=4, separators=(',', ': '), default=default)
 
 
+def format_table(table, **kwargs):
+    # type: (Iterable[Iterable[str]], **Any) -> str
+
+    """
+    Format a table, represented by an iterable of rows, represented by iterables.
+
+    Internally, ``tabulate`` is used to do the formatting. All keyword arguments are passed
+    to ``tabulate`` call.
+
+    :param list(list()) table: table to format.
+    :returns: formatted table.
+    """
+
+    return cast(str, tabulate.tabulate(table, **kwargs))
+
+
 def format_xml(element):
     # type: (bs4.BeautifulSoup) -> str
 
@@ -443,6 +460,25 @@ def log_blob(writer, intro, blob):
     writer("{}:\n{}".format(intro, format_blob(blob)), extra={
         'raw_intro': intro,
         'raw_blob': blob
+    })
+
+
+def log_table(writer, intro, table, **kwargs):
+    # type: (LoggingFunctionType, str, Iterable[Iterable[str]], **Any) -> None
+
+    """
+    Log a formatted table.
+
+    All keyword arguments are passed to :py:meth:`format_table` call which does the actual formatting.
+
+    :param callable writer: A function which is used to actually log the text. Usually a one of some logger methods.
+    :param str intro: Label to show what is the meaning of the logged table.
+    :param list(list()) table: table to format.
+    """
+
+    writer('{}:\n{}'.format(intro, format_table(table, **kwargs)), extra={
+        'raw_intro': intro,
+        'raw_table': table
     })
 
 
@@ -824,7 +860,7 @@ class JSONLoggingFormatter(logging.Formatter):
                 'lineno', 'module', 'msecs', 'msg', 'name', 'pathname', 'process', 'processName',
                 'relativeCreated', 'thread', 'threadName',
                 # our custom fields
-                'raw_blob', 'raw_struct', 'raw_xml', 'raw_intro'
+                'raw_blob', 'raw_struct', 'raw_table', 'raw_xml', 'raw_intro'
             )
         }
 
