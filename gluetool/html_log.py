@@ -23,11 +23,11 @@ NOT_WHITESPACE = re.compile(r'[^\s]')
 TEMPLATE = """
 <html>
   <head>
-    {# Inject assets - library styles and Javascript #}
-    <style>{{ "assets/html-log/semantic.min.css" | file_content }}</style>
-    <style>{{ "assets/html-log/prism.css" | file_content }}</style>
-    <script>{{ "assets/html-log/semantic.min.js" | file_content }}</script>
-    <script>{{ "assets/html-log/prism.js" | file_content }}</script>
+    {# Inject assets - library styles and Javascript. File paths are relative to a path set via --assets option #}
+    <style>{{ "semantic.min.css" | file_content }}</style>
+    <style>{{ "prism.css" | file_content }}</style>
+    <script>{{ "semantic.min.js" | file_content }}</script>
+    <script>{{ "prism.js" | file_content }}</script>
 
     <style>
       body {
@@ -295,18 +295,19 @@ def _snippet_filter(ctx, filepath, lineno, syntax, window=10):
                         line_highlight=lineno)
 
 
-@jinja2.evalcontextfilter  # type: ignore
+@jinja2.contextfilter  # type: ignore
 def file_content_filter(ctx, value):
     # type: (Any, str) -> Union[str, Markup]
     # pylint: disable=unused-argument
     """
-    Return content of the given file.
+    Return content of the given file. File path must be relative to an assets directory
+    set by ``--assets`` option.
 
     :param ctx: render context governed by Jinja.
     :param str value: path to a file to include.
     """
 
-    with io.open(value, 'r') as f:
+    with io.open(os.path.join(ctx['ARGS'].assets, value), 'r') as f:
         return Markup(f.read())
 
 
