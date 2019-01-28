@@ -35,17 +35,15 @@ def fixture_glue():
     glue = NonLoadingGlue()
 
     # register our dummy module classes
-    glue.modules['Dummy module'] = {
-        'class': DummyModule,
-        'description': DummyModule.__doc__,
-        'group': 'none'
-    }
+    glue.modules['Dummy module'] = gluetool.glue.DiscoveredModule(
+        klass=DummyModule,
+        group='none'
+    )
 
-    glue.modules['Broken module'] = {
-        'class': BrokenModule,
-        'description': BrokenModule.__doc__,
-        'group': 'none'
-    }
+    glue.modules['Broken module'] = gluetool.glue.DiscoveredModule(
+        klass=BrokenModule,
+        group='none'
+    )
 
     return glue
 

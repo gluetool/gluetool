@@ -1,18 +1,21 @@
 # pylint: disable=too-many-lines
 
 import argparse
+import collections
 import ConfigParser
 import imp
 import inspect
 import logging
 import os
 import sys
+import warnings
 import ast
 
 from functools import partial
 
 import enum
 import jinja2
+import pkg_resources
 
 from .color import Colors, switch as switch_colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
@@ -21,7 +24,7 @@ from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
 from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, Sequence  # noqa
-from typing import Tuple, Type, Union  # noqa
+from typing import Tuple, Type, Union, NamedTuple  # noqa
 from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
@@ -40,6 +43,10 @@ DEFAULT_MODULE_CONFIG_PATHS = [
 ]
 
 DEFAULT_DATA_PATH = '{}/data'.format(os.path.dirname(os.path.abspath(__file__)))
+
+DEFAULT_MODULE_ENTRY_POINTS = [
+    'gluetool.modules'
+]
 
 DEFAULT_MODULE_PATHS = [
     '{}/gluetool_modules'.format(sys.prefix)
@@ -1118,6 +1125,19 @@ class Module(Configurable):
         self.glue.run_module(module, args or [])
 
 
+#: Describes one discovered ``gluetool`` module.
+#:
+#: :ivar Module klass: a module class.
+#: :ivar str group: group the module belongs to.
+DiscoveredModule = NamedTuple('DiscoveredModule', (
+    ('klass', Type[Module]),
+    ('group', str)
+))
+
+#: Module registry type.
+ModuleRegistryType = Dict[str, DiscoveredModule]
+
+
 class Glue(Configurable):
     # pylint: disable=too-many-public-methods
 
@@ -1238,6 +1258,12 @@ class Glue(Configurable):
                 'metavar': 'DIR',
                 'action': 'append',
                 'default': []
+            },
+            'module-entry-point': {
+                'help': 'Specify setuptools entry point for modules.',
+                'metavar': 'ENTRY-POINT',
+                'action': 'append',
+                'default': []
             }
         }),
         ('Dry run options', {
@@ -1260,6 +1286,17 @@ class Glue(Configurable):
             }
         }
     ]
+
+    @property
+    def module_entry_points(self):
+        # type: () -> List[str]
+
+        """
+        List of setuptools entry points to which modules are attached.
+        """
+
+        from .utils import normalize_multistring_option
+        return normalize_multistring_option(self.option('module-entry-point')) or DEFAULT_MODULE_ENTRY_POINTS
 
     @property
     def module_paths(self):
@@ -1488,27 +1525,62 @@ class Glue(Configurable):
         return context
 
     #
-    # Module loading
+    # Module discovery and loading
     #
-    def _check_module_file(self, mfile):
+    def _register_module(self, registry, group_name, klass, filepath):
+        # type: (ModuleRegistryType, str, Type[Module], str) -> None
+        """
+        Register one discovered ``gluetool`` module.
+
+        :param dict(str, DiscoveredModule) registry: module registry to add module to.
+        :param str group_name: group the module belongs to.
+        :param Module klass: module class.
+        :param str filepath: path to a file module comes from.
+        """
+
+        names = getattr(klass, 'name', None)  # type: Union[None, List[str], Tuple[str]]
+
+        if not names:
+            raise GlueError('No name specified by module class {}:{}'.format(filepath, klass.__name__))
+
+        def _do_register_module(name):
+            # type: (str) -> None
+
+            if name in registry:
+                raise GlueError("Name '{}' of class {}:{} is a duplicate module name".format(
+                    name, filepath, klass.__name__
+                ))
+
+            self.debug("registering module '{}' from {}:{}".format(name, filepath, klass.__name__))
+
+            registry[name] = DiscoveredModule(klass, group_name)
+
+        if isinstance(names, (list, tuple)):
+            for alias in names:
+                _do_register_module(alias)
+
+        else:
+            _do_register_module(names)
+
+    def _check_pm_file(self, filepath):
         # type: (str) -> bool
 
         """
-        Make sure the file looks like a ``gluetool`` module:
+        Make sure a file looks like a ``gluetool`` module:
 
         - can be processed by Python parser,
         - imports :py:class:`gluetool.glue.Glue` and :py:class:`gluetool.glue.Module`,
         - contains child class of :py:class:`gluetool.glue.Module`.
 
-        :param str mfile: path to a file.
+        :param str filepath: path to a file.
         :returns: ``True`` if file contains ``gluetool`` module, ``False`` otherwise.
         :raises gluetool.glue.GlueError: when it's not possible to finish the check.
         """
 
-        self.debug("check possible module file '{}'".format(mfile))
+        self.debug("check possible module file '{}'".format(filepath))
 
         try:
-            with open(mfile) as f:
+            with open(filepath) as f:
                 node = ast.parse(f.read())
 
             # check for gluetool import
@@ -1557,160 +1629,176 @@ class Glue(Configurable):
 
         # pylint: disable=broad-except
         except Exception as e:
-            raise GlueError("Unable to check check module file '{}': {}".format(mfile, str(e)))
+            raise GlueError("Unable to check check module file '{}': {}".format(filepath, e))
 
-    def _import_module(self, import_name, filename):
+    def _do_import_pm(self, filepath, pm_name):
         # type: (str, str) -> Any
 
         """
-        Attempt to import a Python module from a file.
+        Attempt to import a file as a Python module.
 
-        :param str import_name: name assigned to the imported module.
-        :param str filepath: path to a file.
+        :param str filepath: a file to import.
+        :param str pm_name: name assigned to the imported module.
         :returns: imported Python module.
         :raises gluetool.glue.GlueError: when import failed.
         """
 
-        self.debug("try to import module '{}' from file '{}'".format(import_name, filename))
+        self.debug("try to import '{}' as a module '{}'".format(filepath, pm_name))
 
         try:
-            return imp.load_source(import_name, filename)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', RuntimeWarning)
+
+                pm = imp.load_source(pm_name, filepath)
+
+            self.debug('imported file {} as a Python module {}'.format(filepath, pm_name))
+
+            return pm
 
         # pylint: disable=broad-except
-        except Exception as e:
-            raise GlueError("Unable to import module '{}' from '{}': {}".format(import_name, filename, str(e)))
+        except Exception as exc:
+            raise GlueError("Unable to import file '{}' as a module: {}".format(filepath, exc))
 
-    def _load_python_module(self, group, module_name, filepath):
-        # type: (str, str, str) -> Any
-
+    def _import_pm(self, filepath, pm_name):
+        # type: (str, str) -> Any
         """
-        Load Python module from a file, if it contains ``gluetool`` modules. If the
-        file does not look like it contains ``gluetool`` modules, or when it's not
-        possible to import the Python module successfully, method simply warns
-        user and ignores the file.
+        If a file contains ``gluetool`` modules, import the file as a Python module. If the file does not look
+        like it contains ``gluetool`` modules, or when it's not possible to import the Python module successfully,
+        method simply warns user and ignores the file.
 
-        :param str import_name: name assigned to the imported module.
-        :param str filepath: path to a file.
+        :param str filepath: file to load.
+        :param str pm_name: Python module name for the loaded module.
         :returns: loaded Python module.
         :raises gluetool.glue.GlueError: when import failed.
         """
 
-        # Check content of the file, look for Glue and Module stuff
+        # Check content of the file, look for Glue and Module stuff.
         try:
-            if not self._check_module_file(filepath):
+            if not self._check_pm_file(filepath):
                 return
 
-        except GlueError as e:
-            self.warn("ignoring file '{}': {}".format(module_name, e.message))
+        except GlueError as exc:
+            self.warn("ignoring file '{}': {}".format(filepath, exc))
             return
 
-        # Try to import file as a Python module
-        import_name = 'gluetool.glue.{}-{}'.format(group, module_name)
-
+        # Try to import the file.
         try:
-            module = self._import_module(import_name, filepath)
+            pm = self._do_import_pm(filepath, pm_name)
 
-        except GlueError as e:
-            self.warn("ignoring module '{}': {}".format(module_name, e.message))
+        except GlueError as exc:
+            self.warn("ignoring file '{}': {}".format(filepath, exc))
             return
 
-        return module
+        return pm
 
-    def _load_gluetool_modules(self, group, module_name, filepath):
-        # type: (str, str, str) -> List[Tuple[str, Type[Module]]]
-
+    def _discover_gm_in_file(self, registry, filepath, pm_name, group_name):
+        # type: (Dict[str, DiscoveredModule], str, str, str) -> None
         """
-        Load ``gluetool`` modules from a file. Method attempts to import the file
-        as a Python module, and then checks its content and adds all `gluetool`
-        modules to internal module registry.
+        Discover ``gluetool`` modules in a file.
 
-        :param str group: module group.
-        :param str module_name: name assigned to the imported Python module.
+        Attempts to import the file as a Python module, and then checks its content and looks for ``gluetool``
+        modules.
+
+        :param dict(str, DiscoveredModule) registry: registry of modules to which new ones would be added.
         :param str filepath: path to a file.
-        :rtype: [(module_group, module_class), ...]
-        :returns: list of loaded ``gluetool`` modules
+        :param str pm_name: a Python module name to use for the imported module.
+        :param str group_name: a ``gluetool`` module group name assigned to ``gluetool`` modules discovered
+            in the file.
         """
 
-        module = self._load_python_module(group, module_name, filepath)
+        pm = self._import_pm(filepath, pm_name)
 
-        loaded_modules = []  # type: List[Tuple[str, Type[Any]]]
+        if not pm:
+            return
 
-        # Look for gluetool modules in imported stuff, and add them to our module registry
-        for name in dir(module):
-            cls = getattr(module, name)
-
-            if not isinstance(cls, type) or not issubclass(cls, Module) or cls == Module:
+        # Look for gluetool modules in imported Python module's members, and register them.
+        for _, member in inspect.getmembers(pm, inspect.isclass):
+            if not isinstance(member, type) or not issubclass(member, Module) or member == Module:
                 continue
 
-            assert issubclass(cls, Module)
+            assert issubclass(member, Module)
 
-            module_names = getattr(cls, 'name', None)  # type: Union[None, List[str], Tuple[str]]
+            self._register_module(registry, group_name, member, filepath)
 
-            if not module_names:
-                raise GlueError('No name specified by module class {}:{}'.format(filepath, cls.__name__))
-
-            def add_module(mname, cls):
-                # type: (str, Type[Module]) -> None
-
-                if mname in self.modules:
-                    raise GlueError("Name '{}' of module '{}' from '{}' is a duplicate module name".format(
-                        mname, cls.__name__, filepath))
-
-                self.debug("found module '{}', group '{}', in module '{}' from '{}'".format(
-                    mname, group, module_name, filepath))
-
-                self.modules[mname] = {
-                    'class': cls,
-                    'description': cls.description,
-                    'group': group
-                }
-
-                loaded_modules.append((group, cls))
-
-            # if name is a list, add more aliases to the same module
-            if isinstance(module_names, (list, tuple)):
-                for mname in module_names:
-                    add_module(mname, cls)
-
-            else:
-                add_module(module_names, cls)
-
-        return loaded_modules
-
-    def _load_module_path(self, ppath):
-        # type: (str) -> None
-
+    def _discover_gm_in_dir(self, dirpath, registry, pm_prefix):
+        # type: (str, ModuleRegistryType, str) -> None
         """
-        Search and load ``gluetool`` modules from a directory.
+        Discover ``gluetool`` modules in a directory tree.
 
-        In essence, it scans every file with ``.py`` suffix, and searches for
-        classes derived from :py:class:`gluetool.glue.Module`.
+        In essence, it scans directory and its subdirectories for files with ``.py`` suffix, and searches for
+        classes derived from :py:class:`gluetool.glue.Module` in these files.
 
-        :param str ppath: directory to search for `gluetool` modules.
+        :param str dirpath: path to a directory.
+        :param dict(str, DiscoveredModule) registry: registry of modules to which new ones would be added.
+        :param str pm_prefix: a string used to prefix all imported Python module names.
         """
 
-        for root, _, files in os.walk(ppath):
+        self.debug('discovering modules in directory {}'.format(dirpath))
+
+        for root, _, files in os.walk(dirpath):
             for filename in sorted(files):
                 if not filename.endswith('.py'):
                     continue
 
-                group = root.replace(ppath + '/', '')
-                module_name, _ = os.path.splitext(filename)
-                module_file = os.path.join(root, filename)
+                # A group of the module is defined by the directories it lies in under the ``dirpath``.
+                if root == dirpath:
+                    group_name = ''
+                else:
+                    group_name = root.replace(dirpath + os.sep, '')
 
-                self._load_gluetool_modules(group, module_name, module_file)
+                pm_name = '{}.{}.{}'.format(
+                    pm_prefix,
+                    group_name.replace(os.sep, '.'),
+                    os.path.splitext(filename)[0]
+                )
 
-    def load_modules(self):
-        # type: () -> None
+                self._discover_gm_in_file(registry, os.path.join(root, filename), pm_name, group_name)
 
+    def _discover_gm_in_entry_point(self, entry_point, registry):
+        # type: (str, Dict[str, DiscoveredModule]) -> None
+
+        self.debug('discovering modules in entry point {}'.format(entry_point))
+
+        for ep_entry in pkg_resources.iter_entry_points(entry_point):
+            klass = ep_entry.load()
+
+            self._register_module(registry, getattr(klass, 'group', ''), klass, ep_entry.dist.location)
+
+    def discover_modules(self, entry_points=None, paths=None):
+        # type: (Optional[List[str]], Optional[List[str]]) -> Dict[str, DiscoveredModule]
         """
-        Load all available `gluetool` modules.
+        Discover and load all accessible modules.
+
+        Two sources are examined:
+
+        1. entry points, handled by setuptools, to which Python packages can attach ``gluetool`` modules they provide,
+        2. directory trees.
+
+        :param list(str) entry_points: list of entry point names to which ``gluetool`` modules are attached.
+            If not set, entry points set byt the configuration (``--module-entry-point`` option) are used.
+        :param list(str) paths: list of directories to search for ``gluetool`` modules. If not set, paths set by
+            the configuration (``--module-path`` option) are used.
+        :rtype: dict(str, DiscoveredModule)
+        :returns: mapping between module names and ``DiscoveredModule`` instances, describing each module.
         """
 
-        log_dict(self.debug, 'loading modules from these paths', self.module_paths)
+        entry_points = entry_points or self.module_entry_points
+        paths = paths or self.module_paths
 
-        for path in self.module_paths:
-            self._load_module_path(path)
+        log_dict(self.debug, 'discovering modules under following entry points', entry_points)
+        log_dict(self.debug, 'discovering modules under following paths', paths)
+
+        modules_registry = {}  # type: Dict[str, DiscoveredModule]
+
+        for entry_point in entry_points:
+            self._discover_gm_in_entry_point(entry_point, modules_registry)
+
+        for path in paths:
+            self._discover_gm_in_dir(path, modules_registry, 'gluetool.file_modules')
+
+        log_dict(self.debug, 'discovered modules', modules_registry)
+
+        return modules_registry
 
     def __init__(self, tool=None, sentry=None):
         # type: (Optional[Any], Optional[Any]) -> None
@@ -1740,7 +1828,7 @@ class Glue(Configurable):
         self.current_pipeline = None  # type: Optional[List[PipelineStep]]
 
         # module types dictionary
-        self.modules = {}  # type: Dict[str, Dict[str, Any]]
+        self.modules = {}  # type: ModuleRegistryType
 
         # Materialized pipeline
         self._module_instances = []  # type: List[Configurable]
@@ -1888,7 +1976,7 @@ class Glue(Configurable):
         """
 
         actual_module_name = actual_module_name or module_name
-        klass = self.modules[actual_module_name]['class']  # type: Type[Module]
+        klass = self.modules[actual_module_name].klass  # type: Type[Module]
 
         return klass(self, module_name)
 
@@ -1978,57 +2066,81 @@ class Glue(Configurable):
 
         return self.run_modules([step], register=register)
 
-    def module_list(self):
-        # type: () -> List[str]
+    def modules_as_groups(self, modules=None):
+        # type: (Optional[ModuleRegistryType]) -> Dict[str, ModuleRegistryType]
+        """
+        Gathers modules by their groups.
 
-        return sorted(self.modules)
+        :rtype: dict(str, dict(str, DiscoveredModule))
+        :returns: dictonary where keys represent module groups, and values are mappings between
+            module names and the corresponding modules.
+        """
 
-    def module_list_usage(self, groups):
-        # type: (List[str]) -> str
+        modules = modules or self.modules
 
-        """ Returns a string with modules description """
+        groups = collections.defaultdict(dict)  # type: Dict[str, Dict[str, DiscoveredModule]]
+
+        for name, module_info in modules.iteritems():
+            groups[module_info.group][name] = module_info
+
+        return groups
+
+    def modules_descriptions(self, modules=None, groups=None):
+        # type: (Optional[ModuleRegistryType], Optional[List[str]]) -> str
+        """
+        Returns a string with modules and their descriptions.
+
+        :param dict(str, DiscoveredModule) modules: mapping with modules. If not set, current known modules
+            are used.
+        :param list(str) groups: if set, limit descriptions to modules belinging to the given groups.
+        :rtype: str
+        """
+
+        modules = modules or self.modules
+
+        as_groups = self.modules_as_groups(modules=modules)
+
+        descriptions = []  # type: List[str]
 
         if groups:
-            usage = [
-                'Available modules in {} group(s)'.format(', '.join(groups))
+            descriptions += [
+                'Available modules in group(s) {}'.format(', '.join(groups))
             ]
+
         else:
-            usage = [
+            descriptions += [
                 'Available modules'
             ]
 
-        # get module list
-        plist = self.module_group_list()
-        if not plist:
-            usage.append('')
-            usage.append('  -- no modules found --')
+        def _add_no_modules():
+            # type: () -> None
+
+            descriptions.extend([
+                '',
+                '  -- no modules found --'
+            ])
+
+        if not as_groups:
+            _add_no_modules()
+
         else:
-            for group in sorted(plist):
+            descriptions += [
+                ''
+            ]
+
+            for group_name, group in sorted(as_groups.iteritems()):
                 # skip groups that are not in the list
-                # note that groups is [] if all groups should be shown
-                if groups and group not in groups:
+                # note that groups is None if all groups should be shown
+                if groups and group_name not in groups:
                     continue
-                usage.append('')
-                usage.append('%-2s%s' % (' ', group))
-                for key, val in sorted(plist[group].iteritems()):
-                    usage.append('%-4s%-32s %s' % ('', key, val))
 
-        return '\n'.join(usage)
+                group = as_groups[group_name]
 
-    def module_group_list(self):
-        # type: () -> Dict[str, Dict[str, str]]
+                if not group:
+                    _add_no_modules()
+                    continue
 
-        """ Returns a dictionary of groups of modules with description """
-        module_groups = {}  # type: Dict[str, Dict[str, str]]
+                for module_name, module in sorted(group.iteritems()):
+                    descriptions.append('%-4s%-32s %s' % ('', module_name, module.klass.description))
 
-        for module in self.module_list():
-            group = self.modules[module]['group']
-            try:
-                module_groups[group].update({
-                    module: self.modules[module]['description']
-                })
-            except KeyError:
-                module_groups[group] = {
-                    module: self.modules[module]['description']
-                }
-        return module_groups
+        return '\n'.join(descriptions)
