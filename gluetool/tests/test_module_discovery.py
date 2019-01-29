@@ -4,6 +4,21 @@ import logging
 import pytest
 
 import gluetool
+import pkg_resources
+
+from mock import MagicMock
+
+
+class DummyModule(gluetool.Module):
+    name = 'dummy-module'
+
+
+class DummyModuleWithAliases(gluetool.Module):
+    name = ('dummy-module', 'dummy-module-alias')
+
+
+class DummyModuleWithoutName(gluetool.Module):
+    pass
 
 
 @pytest.fixture(name='glue')
@@ -20,9 +35,6 @@ def _assert_module_registered(log, glue, registry, klass, name, group):
 
 
 def test_register_module(log, glue):
-    class DummyModule(gluetool.Module):
-        name = 'dummy-module'
-
     registry = {}
 
     glue._register_module(registry, 'dummy-group', DummyModule, 'dummy-filepath')
@@ -33,39 +45,46 @@ def test_register_module(log, glue):
 
 
 def test_register_module_aliases(log, glue):
-    class DummyModule(gluetool.Module):
-        name = ('dummy-module', 'dummy-module-alias')
-
     registry = {}
 
-    glue._register_module(registry, 'dummy-group', DummyModule, 'dummy-filepath')
+    glue._register_module(registry, 'dummy-group', DummyModuleWithAliases, 'dummy-filepath')
 
     assert len(registry) == 2
 
-    _assert_module_registered(log, glue, registry, DummyModule, 'dummy-module', 'dummy-group')
-    _assert_module_registered(log, glue, registry, DummyModule, 'dummy-module-alias', 'dummy-group')
+    _assert_module_registered(log, glue, registry, DummyModuleWithAliases, 'dummy-module', 'dummy-group')
+    _assert_module_registered(log, glue, registry, DummyModuleWithAliases, 'dummy-module-alias', 'dummy-group')
 
 
 def test_register_module_no_names(log, glue):
-    class DummyModule(gluetool.Module):
-        pass
-
     registry = {}
 
     with pytest.raises(gluetool.GlueError, match=r'No name specified by module class dummy-filepath:DummyModule'):
-        glue._register_module(registry, 'dummy-group', DummyModule, 'dummy-filepath')
+        glue._register_module(registry, 'dummy-group', DummyModuleWithoutName, 'dummy-filepath')
 
 
 def test_register_module_name_conflict(log, glue):
-    class DummyModule(gluetool.Module):
-        name = 'dummy-module'
-
     registry = {
         'dummy-module': None
     }
 
     with pytest.raises(gluetool.GlueError, match=r"Name 'dummy-module' of class dummy-filepath:DummyModule is a duplicate module name"):
         glue._register_module(registry, 'dummy-group', DummyModule, 'dummy-filepath')
+
+
+def test_discover_gm_in_entry(log, monkeypatch, glue):
+    registry = {}
+
+    mock_ep = MagicMock(load=MagicMock(return_value=DummyModule), dist=MagicMock(location='dummy-filepath'))
+    mock_iter_entry_points = MagicMock(return_value=[mock_ep])
+
+    monkeypatch.setattr(pkg_resources, 'iter_entry_points', mock_iter_entry_points)
+
+    glue._discover_gm_in_entry_point('dummy-entry-point', registry)
+
+    mock_ep.load.assert_called_once()
+
+    assert len(registry) == 1
+    _assert_module_registered(log, glue, registry, DummyModule, 'dummy-module', '')
 
 
 @pytest.mark.parametrize(
