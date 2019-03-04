@@ -2142,6 +2142,8 @@ class Glue(Configurable):
                     continue
 
                 for module_name, module in sorted(group.iteritems()):
-                    descriptions.append('%-4s%-32s %s' % ('', module_name, module.klass.description))
+                    # Indent module name by 4 spaces, and reserve 32 characters for each module name,
+                    # starting all descriptions at the same offset.
+                    descriptions.append('    {:32} {}'.format(module_name, module.klass.description))
 
         return '\n'.join(descriptions)
