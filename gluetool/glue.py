@@ -1692,7 +1692,7 @@ class Glue(Configurable):
         return pm
 
     def _discover_gm_in_file(self, registry, filepath, pm_name, group_name):
-        # type: (Dict[str, DiscoveredModule], str, str, str) -> None
+        # type: (ModuleRegistryType, str, str, str) -> None
         """
         Discover ``gluetool`` modules in a file.
 
@@ -1755,7 +1755,7 @@ class Glue(Configurable):
                 self._discover_gm_in_file(registry, os.path.join(root, filename), pm_name, group_name)
 
     def _discover_gm_in_entry_point(self, entry_point, registry):
-        # type: (str, Dict[str, DiscoveredModule]) -> None
+        # type: (str, ModuleRegistryType) -> None
 
         self.debug('discovering modules in entry point {}'.format(entry_point))
 
@@ -1765,7 +1765,7 @@ class Glue(Configurable):
             self._register_module(registry, getattr(klass, 'group', ''), klass, ep_entry.dist.location)
 
     def discover_modules(self, entry_points=None, paths=None):
-        # type: (Optional[List[str]], Optional[List[str]]) -> Dict[str, DiscoveredModule]
+        # type: (Optional[List[str]], Optional[List[str]]) -> ModuleRegistryType
         """
         Discover and load all accessible modules.
 
@@ -1788,7 +1788,7 @@ class Glue(Configurable):
         log_dict(self.debug, 'discovering modules under following entry points', entry_points)
         log_dict(self.debug, 'discovering modules under following paths', paths)
 
-        modules_registry = {}  # type: Dict[str, DiscoveredModule]
+        modules_registry = {}  # type: ModuleRegistryType
 
         for entry_point in entry_points:
             self._discover_gm_in_entry_point(entry_point, modules_registry)
@@ -2078,7 +2078,7 @@ class Glue(Configurable):
 
         modules = modules or self.modules
 
-        groups = collections.defaultdict(dict)  # type: Dict[str, Dict[str, DiscoveredModule]]
+        groups = collections.defaultdict(dict)  # type: Dict[str, ModuleRegistryType]
 
         for name, module_info in modules.iteritems():
             groups[module_info.group][name] = module_info
@@ -2100,6 +2100,7 @@ class Glue(Configurable):
 
         as_groups = self.modules_as_groups(modules=modules)
 
+        # List of lines, will be merged with `\n` before printing.
         descriptions = []  # type: List[str]
 
         if groups:
