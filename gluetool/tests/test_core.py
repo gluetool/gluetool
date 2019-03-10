@@ -98,7 +98,7 @@ def test_check_module_file(log, tmpdir):
         mfile.write(file_content)
 
         log.clear()
-        assert glue._check_module_file(str(mfile)) is True
+        assert glue._check_pm_file(str(mfile)) is True
         assert log.records[0].message == "check possible module file '{}'".format(mfile)
         assert log.records[0].levelno == logging.DEBUG
 
@@ -106,7 +106,7 @@ def test_check_module_file(log, tmpdir):
         mfile.write(file_content)
 
         log.clear()
-        assert glue._check_module_file(str(mfile)) is False
+        assert glue._check_pm_file(str(mfile)) is False
         assert log.records[0].message == "check possible module file '{}'".format(mfile)
         assert log.records[0].levelno == logging.DEBUG
         assert log.records[1].message == error

@@ -342,7 +342,7 @@ class Gluetool(object):
 
         GlueError.no_sentry_exceptions = normalize_multistring_option(Glue.option('no-sentry-exceptions'))
 
-        Glue.load_modules()
+        Glue.modules = Glue.discover_modules()
 
     @handle_exc
     def check_options(self):
@@ -351,25 +351,26 @@ class Gluetool(object):
         Glue = self.Glue
         assert Glue is not None
 
-        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), Glue.module_list())
+        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), Glue.modules.keys())
         log_dict(Glue.debug, 'pipeline description', self.pipeline_desc)
 
         # list modules
         groups = Glue.option('list-modules')
         if groups == [True]:
-            sys.stdout.write('%s\n' % Glue.module_list_usage([]))
+            sys.stdout.write('%s\n' % Glue.modules_descriptions())
             sys.exit(0)
 
         elif groups:
-            sys.stdout.write('%s\n' % Glue.module_list_usage(groups))
+            sys.stdout.write('%s\n' % Glue.modules_descriptions(groups=groups))
             sys.exit(0)
 
         if Glue.option('list-shared'):
             functions = []  # type: List[List[str]]
 
-            for mod_name in Glue.module_list():
-                # pylint: disable=line-too-long
-                functions += [[func_name, mod_name] for func_name in Glue.modules[mod_name]['class'].shared_functions]  # Ignore PEP8Bear
+            for mod_name in sorted(Glue.modules.iterkeys()):
+                functions += [
+                    [func_name, mod_name] for func_name in Glue.modules[mod_name].klass.shared_functions
+                ]
 
             if functions:
                 functions = sorted(functions, key=lambda row: row[0])
@@ -396,7 +397,7 @@ class Gluetool(object):
                         name, source.name, docstring_to_help(description, line_prefix='')
                     ])
 
-            for mod_name in Glue.module_list():
+            for mod_name in sorted(Glue.modules.iterkeys()):
                 _add_variables(Glue.init_module(mod_name))
 
             _add_variables(Glue)
