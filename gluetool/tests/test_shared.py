@@ -25,7 +25,6 @@ class DummyModule(gluetool.Module):
 def fixture_glue():
     return NonLoadingGlue()
 
-
 @pytest.fixture(name='module')
 def fixture_module():
     return create_module(DummyModule)[1]

@@ -16,6 +16,7 @@ from functools import partial
 import enum
 import jinja2
 import pkg_resources
+import six
 
 from .color import Colors, switch as switch_colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
@@ -51,6 +52,22 @@ DEFAULT_MODULE_ENTRY_POINTS = [
 DEFAULT_MODULE_PATHS = [
     '{}/gluetool_modules'.format(sys.prefix)
 ]
+
+#
+# NOTE: pipelines and shared functions.
+#
+# Each `Glue` instance manages one or more pipelines. The main one, requested by the user, can spawn additional
+# "side-car" pipelines, and these can spawn their own children, and so on. Only a single pipeline is being processed
+# at the moment - when a new pipeline is spawned, its parent gives up its time for its kid, and is awoken when the
+# kid finishes. `Glue` keeps a stack of pipelines as thei appear and disappear. There is always a "current pipeline",
+# which has a "current" module, the one being currently executed.
+#
+# Shared functions are managed by *pipelines* - each pipeline takes care of shared functions exported by its modules.
+# `Glue` instance, shared by these pipelines, then allows modules to access all shared functions from all other
+# existing pipelines: when a module wished to call a shared function, first the current pipeline (the one running
+# the module) is inspected, then its parent, after that parent's parent and so on. This is ensured by `Module`
+# API "secretly" calling `Glue` methods, which take care of checking all the layers.
+#
 
 
 class DryRunLevels(enum.IntEnum):
@@ -332,6 +349,326 @@ class PipelineStep(object):
         return PipelineStep(serialized['module'], actual_module=serialized['actual_module'], argv=serialized['argv'])
 
 
+#: Type of pipeline steps.
+# pylint: disable=invalid-name
+PipelineStepsType = List[PipelineStep]
+
+#: Return type of a pipeline.
+# pylint: disable=invalid-name
+PipelineReturnType = Tuple[Optional[Failure], Optional[Failure]]
+
+
+class PipelineAdapter(ContextAdapter):
+    """
+    Custom logger adapter, adding pipeline name as a context.
+
+    :param logging.Logger logger: parent logger this adapter modifies.
+    """
+
+    def __init__(self, logger, pipeline_name):
+        # type: (ContextAdapter, str) -> None
+
+        super(PipelineAdapter, self).__init__(logger, {'ctx_pipeline_name': (5, pipeline_name)})
+
+
+class Pipeline(object):
+    """
+    Pipeline of ``gluetool`` modules. Defined by its steps, takes care of registering their shared functions,
+    running modules and destroying the pipeline.
+
+    :param Glue glue: :py:class:`Glue` instance, taking care of this pipeline.
+    :param list(PipelineStep) steps: modules to run and their options.
+    :ivar list(Module) modules: list of instantiated modules forming the pipeline.
+    :ivar Module current_module: if set, it is the module which is currently being executed.
+    """
+
+    verbose = cast(LoggingFunctionType, lambda s: None)
+    debug = cast(LoggingFunctionType, lambda s: None)
+    info = cast(LoggingFunctionType, lambda s: None)
+    warn = cast(LoggingWarningFunctionType, lambda s: None)
+    error = cast(LoggingFunctionType, lambda s: None)
+    exception = cast(LoggingFunctionType, lambda s: None)
+
+    def __init__(self, glue, steps):
+        # type: (Glue, PipelineStepsType) -> None
+
+        self.logger = glue.logger
+        self.logger.connect(self)
+
+        self.glue = glue
+        self.steps = steps
+
+        # Materialized pipeline
+        self.modules = []  # type: List[Module]
+
+        # Current module (if applicable)
+        self.current_module = None  # type: Optional[Module]
+
+        #: Shared function registry.
+        #: funcname: (module, fn)
+        self.shared_functions = {}  # type: Dict[str, Tuple[Configurable, SharedType]]
+
+    def _add_shared(self, funcname, module, func):
+        # type: (str, Configurable, SharedType) -> None
+        """
+        Add a shared function. Overwrites previously registered shared function of the same name.
+
+        Private part of API, for easier testing.
+
+        :param str funcname: name of the shared function.
+        :param Module module: module providing the shared function.
+        :param callable func: the shared function.
+        """
+
+        self.debug("registering shared function '{}' of module '{}'".format(funcname, module.unique_name))
+
+        self.shared_functions[funcname] = (module, func)
+
+    def add_shared(self, funcname, module):
+        # type: (str, Module) -> None
+        """
+        Add a shared function. Overwrites previously registered shared function of the same name.
+
+        :param str funcname: name of the shared function.
+        :param Module module: module providing the shared function.
+        """
+
+        if not hasattr(module, funcname):
+            raise GlueError("No such shared function '{}' of module '{}'".format(funcname, module.name))
+
+        self._add_shared(funcname, module, getattr(module, funcname))
+
+    def has_shared(self, funcname):
+        # type: (str) -> bool
+        """
+        Check whether a shared function of a given name exists.
+
+        :param str funcname: name of the shared function.
+        :rtype: bool
+        """
+
+        return funcname in self.shared_functions
+
+    def get_shared(self, funcname):
+        # type: (str) -> Optional[SharedType]
+        """
+        Return a shared function.
+
+        :param str funcname: name of the shared function.
+        :returns: a callable (shared function), or ``None`` if no such shared function exists.
+        """
+
+        if not self.has_shared(funcname):
+            return None
+
+        return self.shared_functions[funcname][1]
+
+    def _safe_call(self, callback, *args, **kwargs):
+        # type: (Callable[..., Optional[Failure]], *Any, **Any) -> Optional[Failure]
+        """
+        "Safe" call a function with given arguments. If an exception is raised, wrap it with a :py:class:`Failure`
+        instance, otherwise value returned by the callback is returned.
+        """
+
+        try:
+            return callback(*args, **kwargs)
+
+        # pylint: disable=broad-except
+        except Exception:
+            return Failure(module=self.current_module, exc_info=sys.exc_info())
+
+    def _for_each_module(self, modules, callback, *args, **kwargs):
+        # type: (Iterable[Module], Callable[..., Optional[Failure]], *Any, **Any) -> Optional[Failure]
+        """
+        For each module in a list, call a given function with module as its first argument. If the call
+        returns a :py:class:`Failure` instance, it is returned immediately, ending the loop.
+        """
+
+        for module in modules:
+            self.current_module = module
+
+            failure = self._safe_call(callback, module, *args, **kwargs)
+
+            if failure:
+                return failure
+
+        return None
+
+    def _setup(self):
+        # type: () -> Optional[Failure]
+
+        # Make a copy of steps - while setting modules up, we won't have access to module index, so we cannot
+        # reach to `self.steps` for its arguments, but we can pop the first item of this list - it's always
+        # the "current" module, the one currently being set up.
+        steps = self.steps[:]
+
+        for step in steps:
+            module = self.glue.init_module(step.module, actual_module_name=step.actual_module)
+            self.modules.append(module)
+
+        def _do_setup(module):
+            # type: (Module) -> None
+
+            step = steps.pop(0)
+
+            module.parse_config()
+            module.parse_args(step.argv)
+            module.check_dryrun()
+
+        return self._for_each_module(self.modules, _do_setup)
+
+    def _sanity(self):
+        # type: () -> Optional[Failure]
+
+        def _do_sanity(module):
+            # type: (Module) -> None
+
+            module.sanity()
+            module.check_required_options()
+
+        return self._for_each_module(self.modules, _do_sanity)
+
+    def _execute(self):
+        # type: () -> Optional[Failure]
+
+        def _do_execute(module):
+            # type: (Module) -> None
+
+            # We want to register module's shared function no matter how its ``execute``
+            # finished or crashed. We could use ``try``-``finally`` and call `add_shared` there
+            # but should there be an exception under ``try`` *and* should there be another
+            # one under ``finally``, the first one would be lost, replaced by the later.
+            # And we cannot guarantee exception-less ``add_shared``, it may have been replaced
+            # by module's developer. Therefore resorting to being more verbose.
+            try:
+                module.execute()
+
+            # pylint: disable=broad-except,unused-variable
+            except Exception as exc:  # noqa
+                exc_info = sys.exc_info()
+
+                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
+                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
+                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
+                # to a chain anyway.
+                module.add_shared()
+
+                six.reraise(*exc_info)
+
+            else:
+                module.add_shared()
+
+        return self._for_each_module(self.modules, _do_execute)
+
+    def _destroy(self, failure=None):
+        # type: (Optional[Failure]) -> Optional[Failure]
+        """
+        "Destroy" the pipeline - call each module's ``destroy`` method, reversing the order of modules.
+        If a ``destroy`` method raises an exception, loop ends and the failure is returned.
+
+        :param Failure failure: if set, it represents a failure that caused pipeline to stop, which was followed
+            by a call to currently running ``_destroy``. It is passed to modules' ``destroy`` methods.
+        :returns: ``None`` if everything went well, or a :py:class:`Failure` instance if any ``destroy`` method
+            raised an exception.
+        """
+
+        if not self.modules:
+            return
+
+        self.debug('destroying modules')
+
+        def _destroy(module):
+            # type: (Module) -> Optional[Failure]
+
+            # If we simply called module's `destroy` method, possible exception would be logged as any
+            # other exception, but we want to add "while destroying" message, and make sure it's sent
+            # to the Sentry. Therefore, adding `_safe_call` (inside `_destroy` which was called via `_safe_call`
+            # itself), catching and logging the failure. After that, we simply return the "destroy failure"
+            # from `_destroy`, which then causes `_for_each_module` to quit destroy loop immediately,
+            # propagating this destroy failure even further.
+            def _do_destroy():
+                # type: () -> None
+
+                module.debug('destroying myself')
+                module.destroy(failure=failure)
+
+            destroy_failure = self._safe_call(_do_destroy)
+
+            if destroy_failure:
+                msg = "Exception raised while destroying module '{}': {}".format(
+                    module.unique_name,
+                    destroy_failure.exception.message if destroy_failure and destroy_failure.exception else ''
+                )
+
+                self.error(msg, exc_info=destroy_failure.exc_info)
+                self.glue.sentry_submit_exception(destroy_failure, logger=self.logger)
+
+            return destroy_failure
+
+        final_failure = self._for_each_module(reversed(self.modules), _destroy)
+
+        self.current_module = None
+        self.modules = []
+
+        return final_failure
+
+    def run(self):
+        # type: () -> PipelineReturnType
+        """
+        Run a pipeline - instantiate modules, prepare and execute each of them. When done,
+        destroy all modules.
+        """
+
+        log_dict(self.debug, 'running a pipeline', self.steps)
+
+        # Take a list of modules, and call a helper method for each module of the list. The helper function calls
+        # modules' methods, and these methods may raise exceptions. Should that happen, _safe_call` inside
+        # `_for_each_module` will wrap them with `Failure` instance, collecting the necessary data.
+        #
+        # Here we dispatch loops, wait for them to return, and if a failure got back to us, we stop
+        # running and try to clean things up.
+        #
+        # We always return "output of the forward run" and "output of the destroy run" - these "output" values
+        # are either `None` or `Failure` instances. We don't check too often, all involved methods can accept
+        # these objects and decide what to do with them.
+
+        failure = self._setup()
+
+        if failure:
+            return failure, self._destroy(failure=failure)
+
+        failure = self._sanity()
+
+        if failure:
+            return failure, self._destroy(failure=failure)
+
+        failure = self._execute()
+
+        return failure, self._destroy(failure=failure)
+
+
+class NamedPipeline(Pipeline):
+    """
+    Pipeline with a name. The name is recorded in log messages emitted by the pipeline itself.
+
+    :param Glue glue: :py:class:`Glue` instance, taking care of this pipeline.
+    :param str name: name of the pipeline.
+    :param list(PipelineStep) steps: modules to run and their options.
+    :ivar list(Module) modules: list of instantiated modules forming the pipeline.
+    :ivar Module current_module: if set, it is the module which is currently being executed.
+    """
+
+    def __init__(self, glue, name, steps):
+        # type: (Glue, str, PipelineStepsType) -> None
+
+        super(NamedPipeline, self).__init__(glue, steps)
+
+        self.logger = PipelineAdapter(glue.logger, name)
+        self.logger.connect(self)
+
+        self.name = name
+
+
 class ArgumentParser(argparse.ArgumentParser):
     """
     Pretty much the :py:class:`argparse.ArgumentParser`, it overrides just
@@ -445,7 +782,7 @@ class Configurable(object):
     def __repr__(self):
         # type: () -> str
 
-        return '<Module {}:{}>'.format(self.unique_name, self.name)
+        return '<Module {}:{}:{}>'.format(self.unique_name, self.name, id(self))
 
     @staticmethod
     def _for_each_option(callback, options):
@@ -1020,68 +1357,87 @@ class Module(Configurable):
                          epilog='\n'.join(epilog).strip(),
                          formatter_class=LineWrapRawTextHelpFormatter)
 
-    def destroy(self, failure=None):
-        # type: (Optional[Failure]) -> None
-
-        # pylint: disable-msg=no-self-use,unused-argument
-        """
-        Here should go any code that needs to be run on exit, like job cleanup etc.
-
-        :param gluetool.glue.Failure failure: if set, carries information about failure that made
-          ``gluetool`` to destroy the whole session. Modules might want to take actions based
-          on provided information, e.g. send different notifications.
-        """
-
-        return None
-
     def add_shared(self):
         # type: () -> None
-
         """
-        Register module's shared functions with Glue, to allow other modules
-        to use them.
+        Add all shared functions declared by the module.
         """
 
         for funcname in self.shared_functions:
-            if self.has_shared(funcname):
-                original_shared = self.get_shared(funcname)
-                assert original_shared is not None
+            original_shared = self.glue.get_shared(funcname)
 
+            if original_shared:
                 self._overloaded_shared_functions[funcname] = original_shared
 
             self.glue.add_shared(funcname, self)
 
-    def del_shared(self, funcname):
-        # type: (str) -> None
-
-        self.glue.del_shared(funcname)
-
     def has_shared(self, funcname):
         # type: (str) -> bool
+        """
+        Check whether a shared function of a given name exists.
+
+        :param str funcname: name of the shared function.
+        :rtype: bool
+        """
+
+        # A proxy for Glue's `has_shared`, exists to simplify modules.
 
         return self.glue.has_shared(funcname)
 
     def require_shared(self, *names, **kwargs):
         # type: (*str, **str) -> bool
+        """
+        Make sure given shared functions exist.
+
+        :param tuple(str) names: iterable of shared function names.
+        :param bool warn_only: if set, only warning is emitted. Otherwise, when any required shared function didn't
+            exist, an exception is raised.
+        """
+
+        # A proxy for Glue's `require_shared`, exists to simplify modules.
 
         return self.glue.require_shared(*names, **kwargs)
 
     def get_shared(self, funcname):
         # type: (str) -> Optional[SharedType]
+        """
+        Return a shared function.
+
+        :param str funcname: name of the shared function.
+        :returns: a callable (shared function), or ``None`` if no such shared function exists.
+        """
+
+        # A proxy for Glue's `get_shared`, exists to simplify modules.
 
         return self.glue.get_shared(funcname)
 
-    def execute(self):
-        # type: () -> None
-
-        # pylint: disable-msg=no-self-use
+    def shared(self, funcname, *args, **kwargs):
+        # type: (str, *Any, **Any) -> Any
         """
-        In this method, modules can perform any work they deemed necessary for
-        completing their purpose. E.g. if the module promises to run some tests,
-        this is the place where the code belongs to.
-
-        By default, this method does nothing. Reimplement as needed.
+        Call a shared function, passing it all positional and keyword arguments.
         """
+
+        # A proxy for Glue's `shared`, exists to simplify modules.
+
+        return self.glue.shared(funcname, *args, **kwargs)
+
+    def overloaded_shared(self, funcname, *args, **kwargs):
+        # type: (str, *Any, **Any) -> Any
+        """
+        Call a shared function overloaded by the one provided by this module. This way,
+        a module can give chance to other implementations of its action, e.g. to publish
+        messages on a different message bus.
+        """
+
+        # *Not* a proxy for Glue's `overloaded_shared` - Glue core doesn't care about one module overloading
+        # another module's shared function, Glue handles just the whole pipelines.
+
+        if funcname not in self._overloaded_shared_functions:
+            return None
+
+        self.debug("calling overloaded shared function '{}'".format(funcname))
+
+        return self._overloaded_shared_functions[funcname](*args, **kwargs)
 
     def sanity(self):
         # type: () -> None
@@ -1098,26 +1454,29 @@ class Module(Configurable):
         By default, this method does nothing. Reimplement as needed.
         """
 
-    def shared(self, *args, **kwargs):
-        # type: (*Any, **Any) -> Any
+    def execute(self):
+        # type: () -> None
 
-        return self.glue.shared(*args, **kwargs)
-
-    def overloaded_shared(self, funcname, *args, **kwargs):
-        # type: (str, *Any, **Any) -> Any
-
+        # pylint: disable-msg=no-self-use
         """
-        Call a shared function overloaded by the one provided by this module. This way,
-        a module can give chance to other implementations of its action, e.g. to publish
-        messages on a different message bus.
+        In this method, modules can perform any work they deemed necessary for
+        completing their purpose. E.g. if the module promises to run some tests,
+        this is the place where the code belongs to.
+
+        By default, this method does nothing. Reimplement as needed.
         """
 
-        if funcname not in self._overloaded_shared_functions:
-            return None
+    def destroy(self, failure=None):
+        # type: (Optional[Failure]) -> None
 
-        self.debug("calling overloaded shared function '{}'".format(funcname))
+        # pylint: disable-msg=no-self-use,unused-argument
+        """
+        Here should go any code that needs to be run on exit, like job cleanup etc.
 
-        return self._overloaded_shared_functions[funcname](*args, **kwargs)
+        :param gluetool.glue.Failure failure: if set, carries information about failure that made
+          ``gluetool`` to destroy the whole session. Modules might want to take actions based
+          on provided information, e.g. send different notifications.
+        """
 
     def run_module(self, module, args=None):
         # type: (str, Optional[List[str]]) -> None
@@ -1355,56 +1714,46 @@ class Glue(Configurable):
         See :py:meth:`gluetool.sentry.Sentry.submit_warning`.
         """
 
-    def _add_shared(self, funcname, module, func):
-        # type: (str, Configurable, SharedType) -> None
-
-        """
-        Register a shared function. Overwrite previously registered function
-        with the same name, if there was any such.
-
-        This is a helper method for easier testability. It is not a part of public API of this class.
-
-        :param str funcname: Name of the shared function.
-        :param gluetool.glue.Module module: Module instance providing the shared function.
-        :param callable func: Shared function.
-        """
-
-        self.debug("registering shared function '{}' of module '{}'".format(funcname, module.unique_name))
-
-        self.shared_functions[funcname] = (module, func)
-
     def add_shared(self, funcname, module):
         # type: (str, Module) -> None
 
         """
-        Register a shared function. Overwrite previously registered function
-        with the same name, if there was any such.
+        Add a shared function. Overwrites previously registered shared function of the same name.
 
-        :param str funcname: Name of the shared function.
-        :param gluetool.glue.Module module: Module instance providing the shared function.
+        :param str funcname: name of the shared function.
+        :param Module module: module providing the shared function.
         """
 
-        if not hasattr(module, funcname):
-            raise GlueError("No such shared function '{}' of module '{}'".format(funcname, module.name))
+        # A proxy for current pipeline's `add-shared.`
 
-        self._add_shared(funcname, module, getattr(module, funcname))
-
-    # delete a shared function if exists
-    def del_shared(self, funcname):
-        # type: (str) -> None
-
-        if funcname not in self.shared_functions:
-            return
-
-        del self.shared_functions[funcname]
+        self.current_pipeline.add_shared(funcname, module)
 
     def has_shared(self, funcname):
         # type: (str) -> bool
+        """
+        Check whether a shared function of a given name exists.
 
-        return funcname in self.shared_functions
+        :param str funcname: name of the shared function.
+        :rtype: bool
+        """
+
+        # Check all running pieplines, start with the most recent one.
+
+        for pipeline in reversed(self.pipelines):
+            if pipeline.has_shared(funcname):
+                return True
+
+        return False
 
     def require_shared(self, *names, **kwargs):
         # type: (*str, **str) -> bool
+        """
+        Make sure given shared functions exist.
+
+        :param tuple(str) names: iterable of shared function names.
+        :param bool warn_only: if set, only warning is emitted. Otherwise, when any required shared function didn't
+            exist, an exception is raised.
+        """
 
         warn_only = kwargs.get('warn_only', False)
 
@@ -1427,19 +1776,33 @@ class Glue(Configurable):
 
     def get_shared(self, funcname):
         # type: (str) -> Optional[SharedType]
+        """
+        Return a shared function.
 
-        if not self.has_shared(funcname):
-            return None
+        :param str funcname: name of the shared function.
+        :returns: a callable (shared function), or ``None`` if no such shared function exists.
+        """
 
-        return self.shared_functions[funcname][1]
+        # Check all running pieplines, start with the most recent one.
+
+        for pipeline in reversed(self.pipelines):
+            if pipeline.has_shared(funcname):
+                return pipeline.get_shared(funcname)
+
+        return None
 
     def shared(self, funcname, *args, **kwargs):
         # type: (str, *Any, **Any) -> Any
+        """
+        Call a shared function, passing it all positional and keyword arguments.
+        """
 
-        if funcname not in self.shared_functions:
+        func = self.get_shared(funcname)
+
+        if not func:
             return None
 
-        return self.shared_functions[funcname][1](*args, **kwargs)
+        return func(*args, **kwargs)
 
     @property
     def eval_context(self):
@@ -1457,7 +1820,7 @@ class Glue(Configurable):
 
         return {
             'ENV': dict(os.environ),
-            'PIPELINE': self.current_pipeline
+            'PIPELINE': self.current_pipeline.steps
         }
 
     def _eval_context_module_caller(self):
@@ -1513,16 +1876,30 @@ class Glue(Configurable):
             'MODULE': self._eval_context_module_caller()
         }
 
-        # first "module" is this instance - it provides eval_context as well.
-        for module in [self] + self._module_instances:  # type: ignore  # types are compatible
-            # cache the context for logging
-            module_context = module.eval_context
+        # 1st "module" is always this instance of ``Glue``.
+        # Then we walk through all pipelines, from the oldest to the most recent ones, and call their modules
+        # in the order they were specified.
+        context.update(self.eval_context)
 
-            log_dict(module.verbose, 'eval context', module_context)
+        for pipeline in self.pipelines:
+            for module in pipeline.modules:
+                context.update(module.eval_context)
 
-            context.update(module_context)
+        log_dict(self.verbose, 'eval context', context)
 
         return context
+
+    @property
+    def current_pipeline(self):
+        # type: () -> Pipeline
+
+        return self.pipelines[-1]
+
+    @property
+    def current_module(self):
+        # type: () -> Optional[Module]
+
+        return self.current_pipeline.current_module
 
     #
     # Module discovery and loading
@@ -1824,20 +2201,16 @@ class Glue(Configurable):
 
         self._dryrun_level = DryRunLevels.DEFAULT
 
-        self.current_module = None  # type: Optional[Module]
-        self.current_pipeline = None  # type: Optional[List[PipelineStep]]
-
         # module types dictionary
         self.modules = {}  # type: ModuleRegistryType
 
-        # Materialized pipeline
-        self._module_instances = []  # type: List[Configurable]
+        # Pipeline stack - start with a mock pipeline: we need a place to register our shared functions.
+        self.pipelines = [
+            Pipeline(self, [])
+        ]
 
-        #: Shared function registry.
-        #: funcname: (module, fn)
-        self.shared_functions = {}  # type: Dict[str, Tuple[Configurable, SharedType]]
-
-        self._add_shared('eval_context', self, self._eval_context)
+        # pylint: disable=protected-access
+        self.current_pipeline._add_shared('eval_context', self, self._eval_context)
 
     # pylint: disable=arguments-differ
     def parse_config(self, paths):  # type: ignore  # signature differs on purpose
@@ -1923,44 +2296,6 @@ class Glue(Configurable):
 
         return self._dryrun_level
 
-    def _for_each_module(self, modules, callback, *args, **kwargs):
-        # type: (Iterable[Module], Callable[..., None], *Any, **Any) -> None
-
-        for module in modules:
-            self.current_module = module
-
-            callback(module, *args, **kwargs)
-
-    def destroy_modules(self, failure=None):
-        # type: (Optional[Failure]) -> Any
-
-        if not self._module_instances:
-            return
-
-        # we will destroy modules in reverse order, which makes more sense
-        self.debug('destroying all modules in reverse order')
-
-        def _destroy(module):
-            # type: (Module) -> None
-
-            try:
-                module.debug('destroying myself')
-                module.destroy(failure=failure)
-
-            # pylint: disable=broad-except
-            except Exception as exc:
-                destroy_failure = Failure(module=module, exc_info=sys.exc_info())
-
-                msg = "Exception raised while destroying module '{}': {}".format(module.unique_name, exc.message)
-                self.error(msg, exc_info=destroy_failure.exc_info)
-                self.sentry_submit_exception(destroy_failure, logger=self.logger)
-
-        self._for_each_module(reversed(cast(Sequence[Module], self._module_instances)), _destroy)
-
-        self.current_module = None
-        self.current_pipeline = None
-        self._module_instances = []
-
     def init_module(self, module_name, actual_module_name=None):
         # type: (str, Optional[str]) -> Module
 
@@ -1980,73 +2315,24 @@ class Glue(Configurable):
 
         return klass(self, module_name)
 
-    def run_modules(self, pipeline_desc, register=False):
-        # type: (List[PipelineStep], Optional[bool]) -> None
+    def run_pipeline(self, pipeline):
+        # type: (Pipeline) -> PipelineReturnType
 
-        """
-        Run a pipeline, consisting of multiple modules.
+        self.pipelines.append(pipeline)
 
-        :param list(PipelineStep) pipeline_desc: List of pipeline steps.
-        :param bool register: If ``True``, module instance is added to a list of modules in this
-            ``Glue`` instance, and it will be collected when :py:meth:`destroy_modules` gets called.
-        """
+        try:
+            return pipeline.run()
 
-        log_dict(self.debug, 'running a pipeline', pipeline_desc)
+        finally:
+            self.pipelines.pop(-1)
 
-        self.current_pipeline = pipeline_desc
+    def run_modules(self, steps):
+        # type: (PipelineStepsType) -> PipelineReturnType
 
-        modules = []
+        return self.run_pipeline(Pipeline(self, steps))
 
-        for step in pipeline_desc:
-            module = self.init_module(step.module, actual_module_name=step.actual_module)
-            modules.append(module)
-
-            if register is True:
-                self._module_instances.append(module)
-
-            module.parse_config()
-            module.parse_args(step.argv)
-            module.check_dryrun()
-
-        def _sanity(module):
-            # type: (Module) -> None
-
-            module.sanity()
-            module.check_required_options()
-
-        self._for_each_module(modules, _sanity)
-
-        def _execute(module):
-            # type: (Module) -> None
-
-            # We want to register module's shared function no matter how its ``execute``
-            # finished or crashed. We could use ``try``-``finally`` and call add_shared there
-            # but should there be an exception under ``try`` *and* should there be another
-            # one under ``finally``, the first one would be lost, replaced by the later.
-            # And we cannot guarantee exception-less ``add_shared``, it may have been replaced
-            # by module's developer. Therefore resorting to being more verbose.
-            try:
-                module.execute()
-
-            # pylint: disable=broad-except,unused-variable
-            except Exception as exc:  # noqa
-                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
-                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
-                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
-                # to a chain anyway.
-                module.add_shared()
-                raise exc.__class__, exc, sys.exc_info()[2]
-
-            else:
-                module.add_shared()
-
-        self._for_each_module(modules, _execute)
-
-        self.current_module = None
-        self.current_pipeline = None
-
-    def run_module(self, module_name, module_argv=None, actual_module_name=None, register=False):
-        # type: (str, Optional[List[str]], Optional[str], Optional[bool]) -> Any
+    def run_module(self, module_name, module_argv=None, actual_module_name=None):
+        # type: (str, Optional[List[str]], Optional[str]) -> PipelineReturnType
 
         """
         Syntax sugar for :py:meth:`run_modules`, in the case you want to run just a one-shot module.
@@ -2057,14 +2343,11 @@ class Glue(Configurable):
             ``module_name`` - ``actual_module_name`` refers to the list of known ``gluetool`` modules
             while ``module_name`` is basically an arbitrary name new instance calls itself. If it's
             not set, which is the most common situation, it defaults to ``module_name``.
-        :param bool register: If ``True``, module instance is added to a list of modules
-            in this ``Glue`` instance, and it will be collected when :py:meth:`destroy_modules` gets
-            called.
         """
 
         step = PipelineStep(module_name, actual_module=actual_module_name, argv=module_argv)
 
-        return self.run_modules([step], register=register)
+        return self.run_modules([step])
 
     def modules_as_groups(self, modules=None):
         # type: (Optional[ModuleRegistryType]) -> Dict[str, ModuleRegistryType]
