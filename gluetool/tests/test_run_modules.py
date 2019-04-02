@@ -62,12 +62,12 @@ def fixture_glue():
 
 @pytest.fixture(name='pipeline')
 def fixture_pipeline(glue):
-    return gluetool.glue.Pipeline(glue, [gluetool.glue.PipelineStep('Dummy module')])
+    return gluetool.glue.Pipeline(glue, [gluetool.glue.PipelineStepModule('Dummy module')])
 
 
 @pytest.fixture(name='broken_pipeline')
 def fixture_broken_pipeline(glue):
-    return gluetool.glue.Pipeline(glue, [gluetool.glue.PipelineStep('Broken module')])
+    return gluetool.glue.Pipeline(glue, [gluetool.glue.PipelineStepModule('Broken module')])
 
 
 @pytest.fixture(name='module')
