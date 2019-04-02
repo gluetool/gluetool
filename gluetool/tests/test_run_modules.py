@@ -226,3 +226,52 @@ def test_add_shared_on_error(glue, broken_pipeline, monkeypatch):
     # should be added despite that.
 
     _test_add_shared(glue, broken_pipeline, monkeypatch, BrokenModule)
+
+
+def test_add_shared_missing(pipeline, module):
+    with pytest.raises(gluetool.GlueError, match=r"No such shared function 'does_not_exist' of module 'Dummy module"):
+        pipeline.add_shared('does_not_exist', module)
+
+
+def test_has_shared(glue, pipeline, module):
+    pipeline.shared_functions['foo'] = None
+    glue.pipelines.append(pipeline)
+
+    assert glue.init_module('Dummy module').has_shared('foo') is True
+    assert pipeline.has_shared('foo') is True
+    assert glue.has_shared('foo') is True
+
+
+def test_has_shared_unknown(glue, pipeline):
+    assert glue.init_module('Dummy module').has_shared('foo') is False
+    assert pipeline.has_shared('foo') is False
+    assert glue.has_shared('foo') is False
+
+
+def test_shared(glue, pipeline):
+    pipeline.shared_functions['foo'] = (None, MagicMock(return_value=17))
+    glue.pipelines.append(pipeline)
+
+    assert glue.init_module('Dummy module').shared('foo', 13, 11, 'bar', arg='baz') == 17
+    assert glue.shared('foo', 13, 11, 'bar', arg='baz') == 17
+
+
+def test_shared_unknown(glue):
+    assert glue.init_module('Dummy module').shared('foo', 13, 11, 'bar', arg='baz') is None
+    assert glue.shared('foo', 13, 11, 'bar', arg='baz') is None
+
+
+def test_module_add_shared(module, monkeypatch):
+    monkeypatch.setattr(module.glue, 'add_shared', MagicMock())
+    module.shared_functions = ('foo',)
+
+    module.add_shared()
+
+    module.glue.add_shared.assert_called_once_with('foo', module)
+
+
+def test_module_has_shared(module, monkeypatch):
+    monkeypatch.setattr(module.glue, 'has_shared', MagicMock(return_value=17))
+
+    assert module.has_shared('foo') == 17
+    module.glue.has_shared.assert_called_once_with('foo')

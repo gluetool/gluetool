@@ -376,6 +376,24 @@ class Pipeline(object):
     Pipeline of ``gluetool`` modules. Defined by its steps, takes care of registering their shared functions,
     running modules and destroying the pipeline.
 
+    To simplify the workflow, 2 primitives are defined:
+
+    * :py:meth:`_safe_call` - calls a given callback, returns its return value. Any exception raised by the callback
+      is wrapped by :py:class:`Failure` instance and returned instead of what callback would return.
+    * :py:meth:`_for_each_module` - loop over given list of modules, calling given callback for each of the modules.
+      :py:meth:`_safe_call` is used for the call, makign sure we always have a return value and no exceptions.
+
+    Coupled with the following rules, things clear up a bit:
+
+    * Callbacks are allowed to return either ``None`` or ``Failure`` instance.
+      * This rule matches ``_safe_call`` behavior. There's no need to worry about the return values, return value
+        of a callback can be immediately passed through ``_safe_call``.
+      * There are no other possible return values - return value is **always** either *nothing* or *failure*.
+    * There are no "naked" exceptions, all are catched by ``_safe_call`` and converted to a common return value.
+    * Users of ``_safe_call`` and ``_for_each_module`` also return either ``None`` or ``Failure`` instance, therefore
+      it is very easy to end method by a ``return self._for_each_method(...)`` call - return types of callback,
+      ``_safe_call``, ``_for_each_module`` and our method match, no need to translate them between these method.
+
     :param Glue glue: :py:class:`Glue` instance, taking care of this pipeline.
     :param list(PipelineStep) steps: modules to run and their options.
     :ivar list(Module) modules: list of instantiated modules forming the pipeline.
@@ -466,8 +484,12 @@ class Pipeline(object):
     def _safe_call(self, callback, *args, **kwargs):
         # type: (Callable[..., Optional[Failure]], *Any, **Any) -> Optional[Failure]
         """
-        "Safe" call a function with given arguments. If an exception is raised, wrap it with a :py:class:`Failure`
-        instance, otherwise value returned by the callback is returned.
+        "Safe" call a function with given arguments, converting raised exceptions to :py:class:`Failure` instance.
+
+        :param callable callback: callable to call. Must return either ``None`` or :py:class:`Failure` instance,
+            although it can freely raise exceptions.
+        :returns: value returned by ``callback``, or :py:class:`Failure` instance wrapping exception
+            raise by ``callback``.
         """
 
         try:
@@ -481,16 +503,29 @@ class Pipeline(object):
         # type: (Iterable[Module], Callable[..., Optional[Failure]], *Any, **Any) -> Optional[Failure]
         """
         For each module in a list, call a given function with module as its first argument. If the call
-        returns a :py:class:`Failure` instance, it is returned immediately, ending the loop.
+        returns anythign but ``None``, the value is returned by this function as well, ending the loop.
+
+        :param list(Module) modules: list of modules to iterate over.
+        :param callable callback: a callback, accepting at least one parameter, current module of the loop.
+            Must return either ``None`` or :py:class:`Failure` instance, although it can freely raise
+            exceptions.
+        :returns: value returned by ``callback``, or ``None`` when loop finished.
         """
 
         for module in modules:
             self.current_module = module
 
-            failure = self._safe_call(callback, module, *args, **kwargs)
+            # Given that we're using `_safe_call`, we shouldn't encounter any exception - `_safe_call`
+            # would convert any exception into `Failure` instance. Callback also cannot return either
+            # `None` or a failure. Therefore, if we gat anything `True`-ish, we simply pass it to our
+            # caller since it must by a failure.
+            #
+            # Note: This is enforced by type checks, we have no other power over the callback and its
+            # return typ.e
+            ret = self._safe_call(callback, module, *args, **kwargs)
 
-            if failure:
-                return failure
+            if ret:
+                return ret
 
         return None
 
@@ -534,12 +569,17 @@ class Pipeline(object):
         def _do_execute(module):
             # type: (Module) -> None
 
-            # We want to register module's shared function no matter how its ``execute``
-            # finished or crashed. We could use ``try``-``finally`` and call `add_shared` there
-            # but should there be an exception under ``try`` *and* should there be another
-            # one under ``finally``, the first one would be lost, replaced by the later.
-            # And we cannot guarantee exception-less ``add_shared``, it may have been replaced
-            # by module's developer. Therefore resorting to being more verbose.
+            # Module's shared functions are registered after its `execute` method finishes. But we want to register
+            # module's shared function no matter whether its `execute` finished successfully, or crashed. We could
+            # wrap `execute` call with `try` and `finally``, and call module's `add_shared` there but should there
+            # be an exception under `try` (which can) **and** should there be another one under `finally` (oh, yes,
+            # it can!), the first exception would be lost, replaced by the later. And we cannot guarantee exception-less
+            # `add_shared`, it may have been replaced by module's developer.
+            #
+            # Therefore, we catch the (possible) exception raised by `execute`, save its info aside, register shared
+            # functions, and re-raise the exception. By the act of saving the exception info, we let our exception
+            # chaining to catch up with us - should `add_shared` raise any exception, it would correctly recognize
+            # the first one, connecting it as the predecesor in the exception chain.
             try:
                 module.execute()
 
@@ -547,10 +587,6 @@ class Pipeline(object):
             except Exception as exc:  # noqa
                 exc_info = sys.exc_info()
 
-                # In case ``add_shared`` crashes, the original exception, raised in ``execute``,
-                # is not lost since it's already captured as ``exc``. We will re-raise it when we're
-                # done with ``add_shared``, and should ``add_shared`` crash, ``exc`` would be added
-                # to a chain anyway.
                 module.add_shared()
 
                 six.reraise(*exc_info)
@@ -582,16 +618,19 @@ class Pipeline(object):
 
             # If we simply called module's `destroy` method, possible exception would be logged as any
             # other exception, but we want to add "while destroying" message, and make sure it's sent
-            # to the Sentry. Therefore, adding `_safe_call` (inside `_destroy` which was called via `_safe_call`
-            # itself), catching and logging the failure. After that, we simply return the "destroy failure"
-            # from `_destroy`, which then causes `_for_each_module` to quit destroy loop immediately,
-            # propagating this destroy failure even further.
+            # to the Sentry. Therefore, adding `_safe_call` (inside `_destroy` which itself was called via
+            # `_safe_call`), catching and logging the failure. After that, we simply return the "destroy failure"
+            # from `_destroy`, which then causes `_for_each_module` to quit loop immediately, propagating this
+            # destroy failure even further.
+
             def _do_destroy():
                 # type: () -> None
 
                 module.debug('destroying myself')
                 module.destroy(failure=failure)
 
+            # We get either `None` or a failure if an exception was raised by `destroy`. If it's a failure,
+            # we can log it with a bit more context.
             destroy_failure = self._safe_call(_do_destroy)
 
             if destroy_failure:
@@ -603,6 +642,11 @@ class Pipeline(object):
                 self.error(msg, exc_info=destroy_failure.exc_info)
                 self.glue.sentry_submit_exception(destroy_failure, logger=self.logger)
 
+            # We're supposed to return `None` or `Failure` - `destroy_failure` is exactly what we can
+            # return without thinking about it. `destroy` call went well, and `destroy_failure` is `None`
+            # then, or it crashed and we have a `Failure` instance, which also good: it's going to
+            # break the loop in `_for_each_loop`, propagating this "destroy failure" furher, making it
+            # the last thing we ever produced (since `destroy` crashed, we can't trust anything, just bail).
             return destroy_failure
 
         final_failure = self._for_each_module(reversed(self.modules), _destroy)
@@ -617,6 +661,11 @@ class Pipeline(object):
         """
         Run a pipeline - instantiate modules, prepare and execute each of them. When done,
         destroy all modules.
+
+        :returns: tuple of two items, each of them either ``None`` or a :py:class:`Failure` instance. The first item
+            represents the output of the pipeline, the second item represents the output of the destroy chain. If
+            the item is ``None``, the stage finished without any issues, if it's a ``Failure`` instance, then an
+            exception was raised during the stage, and ``Failure`` wraps it.
         """
 
         log_dict(self.debug, 'running a pipeline', self.steps)
