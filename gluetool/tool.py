@@ -17,7 +17,7 @@ import gluetool.sentry
 
 from gluetool import GlueError, GlueRetryError, Failure
 from gluetool.help import extract_eval_context_info, docstring_to_help
-from gluetool.glue import PipelineStep
+from gluetool.glue import PipelineStepModule
 from gluetool.log import log_dict
 from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
     normalize_multistring_option
@@ -68,7 +68,7 @@ class Gluetool(object):
         self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
         self.argv = None  # type: Optional[List[str]]
-        self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStep]]
+        self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStepModule]]
 
     @cached_property
     def _version(self):
@@ -87,7 +87,7 @@ class Gluetool(object):
         return 'gluetool'
 
     def _deduce_pipeline_desc(self, argv, modules):
-        # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStep]
+        # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStepModule]
 
         # pylint: disable=no-self-use
 
@@ -97,7 +97,7 @@ class Gluetool(object):
 
         :param list argv: Remainder of :py:data:`sys.argv` after removing ``gluetool``'s own options.
         :param list(str) modules: List of known module names.
-        :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStep` instances.
+        :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStepModule` instances.
         """
 
         alias_pattern = re.compile(r'^([a-z\-]*):([a-z\-]*)$', re.I)
@@ -110,7 +110,7 @@ class Gluetool(object):
 
             # is the "arg" a module name? If so, add new step to the pipeline
             if arg in modules:
-                step = PipelineStep(arg)
+                step = PipelineStepModule(arg)
                 pipeline_desc.append(step)
                 continue
 
@@ -119,7 +119,7 @@ class Gluetool(object):
             if match is not None:
                 module, actual_module = match.groups()
 
-                step = PipelineStep(module, actual_module=actual_module)
+                step = PipelineStepModule(module, actual_module=actual_module)
                 pipeline_desc.append(step)
                 continue
 
@@ -131,7 +131,7 @@ class Gluetool(object):
         return pipeline_desc
 
     def log_cmdline(self, argv, pipeline_desc):
-        # type: (List[Any], List[gluetool.glue.PipelineStep]) -> None
+        # type: (List[Any], List[gluetool.glue.PipelineStepModule]) -> None
 
         cmdline = [
             [sys.argv[0]] + argv

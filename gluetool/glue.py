@@ -15,6 +15,7 @@ from functools import partial
 
 import enum
 import jinja2
+import mock
 import pkg_resources
 import six
 
@@ -24,8 +25,8 @@ from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, Sequence  # noqa
-from typing import Tuple, Type, Union, NamedTuple  # noqa
+from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn  # noqa
+from typing import Sequence, Tuple, Type, Union, NamedTuple  # noqa
 from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
@@ -307,6 +308,17 @@ class PipelineStep(object):
     # pylint: disable=too-few-public-methods
     """
     Step of ``gluetool``'s  pipeline - which is basically just a list of steps.
+    """
+
+    def to_module(self, glue):
+        # type: (Glue) -> Any
+
+        raise NotImplementedError()
+
+class PipelineStepModule(PipelineStep):
+    # pylint: disable=too-few-public-methods
+    """
+    Step of ``gluetool``'s  pipeline backed by a module.
 
     :param str module: name to give to the module instance. This name is used e.g. in logging or when
         searching for module's config file.
@@ -327,7 +339,12 @@ class PipelineStep(object):
     def __repr__(self):
         # type: () -> str
 
-        return "PipelineStep('{}', actual_module='{}', argv={})".format(self.module, self.actual_module, self.argv)
+        return "PipelineStepModule('{}', actual_module='{}', argv={})".format(self.module, self.actual_module, self.argv)
+
+    def to_module(self, glue):
+        # type: (Glue) -> Module
+
+        return glue.init_module(self.module, actual_module_name=self.actual_module)
 
     @property
     def module_designation(self):
@@ -344,14 +361,57 @@ class PipelineStep(object):
 
     @classmethod
     def unserialize_from_json(cls, serialized):
-        # type: (Dict[str, Any]) -> PipelineStep
+        # type: (Dict[str, Any]) -> PipelineStepModule
 
-        return PipelineStep(serialized['module'], actual_module=serialized['actual_module'], argv=serialized['argv'])
+        return PipelineStepModule(serialized['module'], actual_module=serialized['actual_module'], argv=serialized['argv'])
+
+
+class PipelineStepCallback(PipelineStep):
+    # pylint: disable=too-few-public-methods
+    """
+    Step of ``gluetool``'s  pipeline backed by callable.
+
+    :param str name: name to give to the module instance. This name is used e.g. in logging or when
+        searching for module's config file.
+    :param callable callback: a callable to execute.
+    """
+
+    def __init__(self, name, callback, *args, **kwargs):
+        # type: (str, Callable[..., None], *Any, **Any) -> None
+
+        self.name = name
+        self.callback = callback
+
+        self.args = self.argv = args  # `argv` to match module-based pipelines
+        self.kwargs = kwargs
+
+    def __repr__(self):
+        # type: () -> str
+
+        return "PipelineStepCallback('{}', {})".format(self.name, self.callback)
+
+    def to_module(self, glue):
+        # type: (Glue) -> CallbackModule
+
+        return CallbackModule(self.name, glue, self.callback)
+
+    def serialize_to_json(self):
+        # type: () -> Dict[str, Any]
+
+        return {
+            field: getattr(self, field) for field in ('name', 'callback')
+        }
+
+    @classmethod
+    def unserialize_from_json(cls, serialized):
+        # type: (Dict[str, Any]) -> NoReturn
+
+        raise GlueError('Cannot unserialize callback pipeline step')
 
 
 #: Type of pipeline steps.
 # pylint: disable=invalid-name
-PipelineStepsType = List[PipelineStep]
+PipelineStepsType = Sequence[PipelineStep]
 
 #: Return type of a pipeline.
 # pylint: disable=invalid-name
@@ -538,16 +598,19 @@ class Pipeline(object):
         steps = self.steps[:]
 
         for step in steps:
-            module = self.glue.init_module(step.module, actual_module_name=step.actual_module)
+            module = step.to_module(self.glue)
             self.modules.append(module)
 
         def _do_setup(module):
             # type: (Module) -> None
 
-            step = steps.pop(0)
+            step = steps.pop(0)  # type: ignore  # sequence of modules does have `pop`...
 
             module.parse_config()
-            module.parse_args(step.argv)
+
+            if isinstance(step, PipelineStepModule):
+                module.parse_args(step.argv)
+
             module.check_dryrun()
 
         return self._for_each_module(self.modules, _do_setup)
@@ -626,7 +689,6 @@ class Pipeline(object):
             def _do_destroy():
                 # type: () -> None
 
-                module.debug('destroying myself')
                 module.destroy(failure=failure)
 
             # We get either `None` or a failure if an exception was raised by `destroy`. If it's a failure,
@@ -1276,6 +1338,46 @@ class Configurable(object):
         """
 
         return {}
+
+
+class CallbackModule(mock.MagicMock):  # type: ignore  # MagicMock has type Any, complains about inheriting from it
+    """
+    Stand-in replacement for common :py:`Module` instances which does not represent any real module. We need it only
+    to simplify code pipeline code - it can keep working with ``Module``-like instances, since this class mocks each
+    and every method, but calls given ``callback`` in its ``execute`` method.
+
+    :param str name: name of the pseudo-module.
+    :param Glue glue: ``Glue`` instance governing the pipeline this module is part of.
+    :param callable callback: called in the ``execute`` method. Its arguments will be ``glue``, followed by remaining
+        positional and keyword arguments (``args`` and ``kwargs``).
+    :param tuple args: passed to ``callback``.
+    :param dict kwargs: passed to ``callback``.
+    """
+
+    def __init__(self, name, glue, callback, *args, **kwargs):
+        # type: (str, Glue, Callable[..., None], *Any, **Any) -> None
+
+        super(CallbackModule, self).__init__()
+
+        self.glue = glue
+        self.name = self.unique_name = name
+
+        self._callback = callback
+        self._args = args
+        self._kwargs = kwargs
+
+    def _get_child_mock(self, **kw):
+        # type: (**Any) -> mock.MagicMock
+
+        # The default implementation uses the same class it's member of, i.e. ``CallbackModule``. Too complicated,
+        # we're perfectly fine with child mocks being of ``MagicMock``.
+
+        return mock.MagicMock(**kw)
+
+    def execute(self):
+        # type: () -> None
+
+        self._callback(self.glue, *self._args, **self._kwargs)
 
 
 class Module(Configurable):
@@ -2394,7 +2496,7 @@ class Glue(Configurable):
             not set, which is the most common situation, it defaults to ``module_name``.
         """
 
-        step = PipelineStep(module_name, actual_module=actual_module_name, argv=module_argv)
+        step = PipelineStepModule(module_name, actual_module=actual_module_name, argv=module_argv)
 
         return self.run_modules([step])
 
