@@ -609,7 +609,7 @@ class Pipeline(object):
         """
 
         if not self.modules:
-            return
+            return None
 
         self.debug('destroying modules')
 
