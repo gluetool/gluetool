@@ -60,7 +60,7 @@ DEFAULT_MODULE_PATHS = [
 # Each `Glue` instance manages one or more pipelines. The main one, requested by the user, can spawn additional
 # "side-car" pipelines, and these can spawn their own children, and so on. Only a single pipeline is being processed
 # at the moment - when a new pipeline is spawned, its parent gives up its time for its kid, and is awoken when the
-# kid finishes. `Glue` keeps a stack of pipelines as thei appear and disappear. There is always a "current pipeline",
+# kid finishes. `Glue` keeps a stack of pipelines as their appear and disappear. There is always a "current pipeline",
 # which has a "current" module, the one being currently executed.
 #
 # Shared functions are managed by *pipelines* - each pipeline takes care of shared functions exported by its modules.
@@ -441,7 +441,7 @@ class Pipeline(object):
     * :py:meth:`_safe_call` - calls a given callback, returns its return value. Any exception raised by the callback
       is wrapped by :py:class:`Failure` instance and returned instead of what callback would return.
     * :py:meth:`_for_each_module` - loop over given list of modules, calling given callback for each of the modules.
-      :py:meth:`_safe_call` is used for the call, makign sure we always have a return value and no exceptions.
+      :py:meth:`_safe_call` is used for the call, making sure we always have a return value and no exceptions.
 
     Coupled with the following rules, things clear up a bit:
 
@@ -563,7 +563,7 @@ class Pipeline(object):
         # type: (Iterable[Module], Callable[..., Optional[Failure]], *Any, **Any) -> Optional[Failure]
         """
         For each module in a list, call a given function with module as its first argument. If the call
-        returns anythign but ``None``, the value is returned by this function as well, ending the loop.
+        returns anything but ``None``, the value is returned by this function as well, ending the loop.
 
         :param list(Module) modules: list of modules to iterate over.
         :param callable callback: a callback, accepting at least one parameter, current module of the loop.
@@ -577,11 +577,11 @@ class Pipeline(object):
 
             # Given that we're using `_safe_call`, we shouldn't encounter any exception - `_safe_call`
             # would convert any exception into `Failure` instance. Callback also cannot return either
-            # `None` or a failure. Therefore, if we gat anything `True`-ish, we simply pass it to our
-            # caller since it must by a failure.
+            # `None` or a failure. Therefore, if we got anything `True`-ish, we simply pass it to our
+            # caller since it must be a failure.
             #
             # Note: This is enforced by type checks, we have no other power over the callback and its
-            # return typ.e
+            # return type.
             ret = self._safe_call(callback, module, *args, **kwargs)
 
             if ret:
@@ -1576,8 +1576,10 @@ class Module(Configurable):
         # type: (str, *Any, **Any) -> Any
         """
         Call a shared function overloaded by the one provided by this module. This way,
-        a module can give chance to other implementations of its action, e.g. to publish
-        messages on a different message bus.
+        a module can give chance to other implementations of the same name, e.g. function
+        named ``publish_message``, working with message bus A, would call previously
+        shared function holding of this name, registered by a module earlier in the pipeline,
+        which works with message bus B.
         """
 
         # *Not* a proxy for Glue's `overloaded_shared` - Glue core doesn't care about one module overloading
