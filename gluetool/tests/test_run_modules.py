@@ -140,7 +140,7 @@ def test_for_each_module_exception(pipeline, module, broken_module):
     assert ret.exception.message == 'bar'
 
 
-def test_pipeline_setup(pipeline, monkeypatch):
+def test_pipeline_setup(pipeline):
     pipeline._setup()
 
     assert len(pipeline.modules) == 1
@@ -233,7 +233,7 @@ def test_add_shared_missing(pipeline, module):
         pipeline.add_shared('does_not_exist', module)
 
 
-def test_has_shared(glue, pipeline, module):
+def test_has_shared(glue, pipeline):
     pipeline.shared_functions['foo'] = None
     glue.pipelines.append(pipeline)
 

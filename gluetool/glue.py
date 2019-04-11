@@ -315,6 +315,7 @@ class PipelineStep(object):
 
         raise NotImplementedError()
 
+
 class PipelineStepModule(PipelineStep):
     # pylint: disable=too-few-public-methods
     """
@@ -339,7 +340,11 @@ class PipelineStepModule(PipelineStep):
     def __repr__(self):
         # type: () -> str
 
-        return "PipelineStepModule('{}', actual_module='{}', argv={})".format(self.module, self.actual_module, self.argv)
+        return "PipelineStepModule('{}', actual_module='{}', argv={})".format(
+            self.module,
+            self.actual_module,
+            self.argv
+        )
 
     def to_module(self, glue):
         # type: (Glue) -> Module
@@ -363,7 +368,11 @@ class PipelineStepModule(PipelineStep):
     def unserialize_from_json(cls, serialized):
         # type: (Dict[str, Any]) -> PipelineStepModule
 
-        return PipelineStepModule(serialized['module'], actual_module=serialized['actual_module'], argv=serialized['argv'])
+        return PipelineStepModule(
+            serialized['module'],
+            actual_module=serialized['actual_module'],
+            argv=serialized['argv']
+        )
 
 
 class PipelineStepCallback(PipelineStep):
@@ -405,6 +414,7 @@ class PipelineStepCallback(PipelineStep):
     @classmethod
     def unserialize_from_json(cls, serialized):
         # type: (Dict[str, Any]) -> NoReturn
+        # pylint: disable=unused-argument
 
         raise GlueError('Cannot unserialize callback pipeline step')
 
@@ -701,6 +711,7 @@ class Pipeline(object):
                     destroy_failure.exception.message if destroy_failure and destroy_failure.exception else ''
                 )
 
+                # pylint: disable=unexpected-keyword-arg
                 self.error(msg, exc_info=destroy_failure.exc_info)
                 self.glue.sentry_submit_exception(destroy_failure, logger=self.logger)
 
