@@ -17,7 +17,7 @@ import gluetool.sentry
 
 from gluetool import GlueError, GlueRetryError, Failure
 from gluetool.help import extract_eval_context_info, docstring_to_help
-from gluetool.glue import PipelineStep
+from gluetool.glue import PipelineStepModule
 from gluetool.log import log_dict
 from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
     normalize_multistring_option
@@ -26,6 +26,7 @@ from gluetool.utils import format_command_line, cached_property, normalize_path,
 # pylint: disable=unused-import,wrong-import-order
 from typing import cast, Any, Callable, List, Optional, NoReturn, Union  # noqa
 from types import FrameType  # noqa
+from gluetool.glue import PipelineReturnType  # noqa
 
 
 # Order is important, the later one overrides values from the former
@@ -67,7 +68,7 @@ class Gluetool(object):
         self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
         self.argv = None  # type: Optional[List[str]]
-        self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStep]]
+        self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStepModule]]
 
     @cached_property
     def _version(self):
@@ -86,7 +87,7 @@ class Gluetool(object):
         return 'gluetool'
 
     def _deduce_pipeline_desc(self, argv, modules):
-        # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStep]
+        # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStepModule]
 
         # pylint: disable=no-self-use
 
@@ -96,7 +97,7 @@ class Gluetool(object):
 
         :param list argv: Remainder of :py:data:`sys.argv` after removing ``gluetool``'s own options.
         :param list(str) modules: List of known module names.
-        :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStep` instances.
+        :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStepModule` instances.
         """
 
         alias_pattern = re.compile(r'^([a-z\-]*):([a-z\-]*)$', re.I)
@@ -109,7 +110,7 @@ class Gluetool(object):
 
             # is the "arg" a module name? If so, add new step to the pipeline
             if arg in modules:
-                step = PipelineStep(arg)
+                step = PipelineStepModule(arg)
                 pipeline_desc.append(step)
                 continue
 
@@ -118,7 +119,7 @@ class Gluetool(object):
             if match is not None:
                 module, actual_module = match.groups()
 
-                step = PipelineStep(module, actual_module=actual_module)
+                step = PipelineStepModule(module, actual_module=actual_module)
                 pipeline_desc.append(step)
                 continue
 
@@ -130,7 +131,7 @@ class Gluetool(object):
         return pipeline_desc
 
     def log_cmdline(self, argv, pipeline_desc):
-        # type: (List[Any], List[gluetool.glue.PipelineStep]) -> None
+        # type: (List[Any], List[gluetool.glue.PipelineStepModule]) -> None
 
         cmdline = [
             [sys.argv[0]] + argv
@@ -182,27 +183,6 @@ class Gluetool(object):
         sys.exit(exit_status)
 
     # pylint: disable=invalid-name
-    def _cleanup(self, failure=None):
-        # type: (Optional[gluetool.glue.Failure]) -> int
-
-        """
-        Clear Glue pipeline by calling modules' ``destroy`` methods.
-        """
-
-        if not self.Glue:
-            return 0
-
-        destroy_failure = self.Glue.destroy_modules(failure=failure)
-
-        # if anything happend while destroying modules, crash the pipeline
-        if not destroy_failure:
-            return 0
-
-        self._exit_logger.warn('Exception raised when destroying modules, overriding exit status')
-
-        return -1
-
-    # pylint: disable=invalid-name
     def _handle_failure_core(self, failure):
         # type: (gluetool.glue.Failure) -> NoReturn
 
@@ -227,12 +207,10 @@ class Gluetool(object):
         else:
             msg = "Exception raised: {}".format(failure.exc_info[1].message)
 
-        logger.exception(msg, exc_info=failure.exc_info)
+        logger.error(msg, exc_info=failure.exc_info)
 
         if self.sentry is not None:
             self.sentry.submit_exception(failure, logger=logger)
-
-        exit_status = min(exit_status, self._cleanup(failure=failure))
 
         self._quit(exit_status)
 
@@ -269,7 +247,7 @@ class Gluetool(object):
                 # tripple error \o/
 
                 print >> sys.stderr
-                print >> sys.stderr, '!!! While submitting an exception to the Sentry, another exception appeared !!!'
+                print >> sys.stderr, '!!! While logging an exception, another exception appeared !!!'
                 print >> sys.stderr, '    Giving up on everything...'
                 print >> sys.stderr
 
@@ -420,7 +398,7 @@ class Gluetool(object):
 
     @handle_exc
     def run_pipeline(self):
-        # type: () -> None
+        # type: () -> PipelineReturnType
 
         Glue = self.Glue
         assert Glue is not None
@@ -438,31 +416,43 @@ class Gluetool(object):
         # actually the execution loop is retries+1
         # there is always one execution
         retries = Glue.option('retries')
+
         for loop_number in range(retries + 1):
-            try:
-                # Reset pipeline - destroy all modules that exist so far
-                Glue.destroy_modules()
+            # Print retry info
+            if loop_number:
+                Glue.warn('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
 
-                # Print retry info
-                if loop_number:
-                    Glue.warn('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
+            # Run the pipeline
+            failure, destroy_failure = Glue.run_modules(self.pipeline_desc)
 
-                # Run the pipeline
-                Glue.run_modules(self.pipeline_desc, register=True)
+            if destroy_failure:
+                return failure, destroy_failure
 
-            except GlueRetryError as e:
-                Glue.error(e)
+            if failure and isinstance(failure.exception, GlueRetryError):
+                Glue.error(failure.exception)
                 continue
 
-            break
+            return failure, destroy_failure
+
+        return None, None
 
     def main(self):
         # type: () -> None
 
         self.setup()
         self.check_options()
-        self.run_pipeline()
-        self._quit(self._cleanup())
+
+        failure, destroy_failure = self.run_pipeline()
+
+        if destroy_failure:
+            self._exit_logger.warn('Exception raised when destroying modules, overriding exit status')
+
+            self._handle_failure(destroy_failure)
+
+        if failure:
+            self._handle_failure(failure)
+
+        self._quit(0)
 
 
 def main():
