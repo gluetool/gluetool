@@ -1510,7 +1510,8 @@ def wait(label, check, timeout=None, tick=30, logger=None):
     Wait for a condition to be true.
 
     :param str label: printable label used for logging.
-    :param callable check: called to test the condition. If its return value evaluates as ``True``,
+    :param callable check: called to test the condition. If its return value is a tuple and the first item
+        evaluates as ``True`` or it is not a tuple and its return value evaluates as ``True``,
         the condition is assumed to pass the test and waiting ends.
     :param int timeout: fail after this many seconds. ``None`` means test forever.
     :param int tick: test condition every ``tick`` seconds.
@@ -1540,7 +1541,10 @@ def wait(label, check, timeout=None, tick=30, logger=None):
     while timeout is None or time.time() < end_time:
         logger.debug("calling callback function")
         ret = check()
-        if ret:
+
+        # If ret is a tuple, use the first item to evaluate. This is useful if the wait function
+        # returns some output you want to process later ...
+        if (isinstance(ret, tuple) and ret[0]) or (not isinstance(ret, tuple) and ret):
             logger.debug('check passed, assuming success')
             return ret
 
