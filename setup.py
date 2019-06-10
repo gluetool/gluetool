@@ -39,12 +39,14 @@ if __name__ == '__main__':
               'enum34==1.1.6',
               'Jinja2==2.10',
               'lxml==4.2.4',
+              'mock==3.0.5',
               'packaging==17.1',
               'raven==6.9.0',
               'requests==2.19.1',
               'requests-toolbelt==0.8.0',
               # since 0.15.52, it returns ordereddict instead of pure dicts, making format_dict unhappy
               'ruamel.yaml==0.15.51',
+              'six==1.12.0',
               # newer versions bring way too many incompabilities, needs deeper inspection
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',
