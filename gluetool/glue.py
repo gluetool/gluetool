@@ -660,6 +660,8 @@ class Pipeline(object):
             except Exception as exc:  # noqa
                 exc_info = sys.exc_info()
 
+                module.error('Exception raised: {}'.format(exc_info[1]))
+
                 module.add_shared()
 
                 six.reraise(*exc_info)
