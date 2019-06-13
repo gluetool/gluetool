@@ -660,7 +660,13 @@ class Pipeline(object):
             except Exception as exc:  # noqa
                 exc_info = sys.exc_info()
 
-                module.error('Exception raised: {}'.format(exc_info[1]))
+                module.error('Exception raised: {}'.format(exc_info[1]), exc_info=exc_info)
+
+                # Make sure it's reported - we log it, we report it.
+                self.glue.sentry_submit_exception(
+                    Failure(module=module, exc_info=exc_info),
+                    logger=self.logger
+                )
 
                 module.add_shared()
 
