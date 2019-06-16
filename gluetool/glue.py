@@ -19,6 +19,7 @@ import mock
 import pkg_resources
 import six
 
+from .action import Action
 from .color import Colors, switch as switch_colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
 from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
@@ -496,6 +497,10 @@ class Pipeline(object):
         #: funcname: (module, fn)
         self.shared_functions = {}  # type: Dict[str, Tuple[Configurable, SharedType]]
 
+        # Action wrapping runtime of the pipeline. Initialized when pipeline begins running, all following
+        # actions (e.g. executing modules) are children of this action.
+        self.action = None  # type: Optional[Action]
+
     def _add_shared(self, funcname, module, func):
         # type: (str, Configurable, SharedType) -> None
         """
@@ -653,27 +658,35 @@ class Pipeline(object):
             # functions, and re-raise the exception. By the act of saving the exception info, we let our exception
             # chaining to catch up with us - should `add_shared` raise any exception, it would correctly recognize
             # the first one, connecting it as the predecesor in the exception chain.
-            try:
-                module.execute()
+            with Action(
+                'executing module',
+                parent=self.action,
+                logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
+                tags={
+                    'unique-name': module.unique_name
+                }
+            ):
+                try:
+                    module.execute()
 
-            # pylint: disable=broad-except,unused-variable
-            except Exception as exc:  # noqa
-                exc_info = sys.exc_info()
+                # pylint: disable=broad-except,unused-variable
+                except Exception as exc:  # noqa
+                    exc_info = sys.exc_info()
 
-                module.error('Exception raised: {}'.format(exc_info[1]), exc_info=exc_info)
+                    module.error('Exception raised: {}'.format(exc_info[1]), exc_info=exc_info)
 
-                # Make sure it's reported - we log it, we report it.
-                self.glue.sentry_submit_exception(
-                    Failure(module=module, exc_info=exc_info),
-                    logger=self.logger
-                )
+                    # Make sure it's reported - we log it, we report it.
+                    self.glue.sentry_submit_exception(
+                        Failure(module=module, exc_info=exc_info),
+                        logger=self.logger
+                    )
 
-                module.add_shared()
+                    module.add_shared()
 
-                six.reraise(*exc_info)
+                    six.reraise(*exc_info)
 
-            else:
-                module.add_shared()
+                else:
+                    module.add_shared()
 
         return self._for_each_module(self.modules, _do_execute)
 
@@ -707,7 +720,15 @@ class Pipeline(object):
             def _do_destroy():
                 # type: () -> None
 
-                module.destroy(failure=failure)
+                with Action(
+                    'destroying module',
+                    parent=self.action,
+                    logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
+                    tags={
+                        'unique-name': module.unique_name
+                    }
+                ):
+                    module.destroy(failure=failure)
 
             # We get either `None` or a failure if an exception was raised by `destroy`. If it's a failure,
             # we can log it with a bit more context.
@@ -749,32 +770,33 @@ class Pipeline(object):
             exception was raised during the stage, and ``Failure`` wraps it.
         """
 
-        log_dict(self.debug, 'running a pipeline', self.steps)
+        with Action('running pipeline', logger=self.logger) as self.action:
+            log_dict(self.debug, 'running a pipeline', self.steps)
 
-        # Take a list of modules, and call a helper method for each module of the list. The helper function calls
-        # modules' methods, and these methods may raise exceptions. Should that happen, _safe_call` inside
-        # `_for_each_module` will wrap them with `Failure` instance, collecting the necessary data.
-        #
-        # Here we dispatch loops, wait for them to return, and if a failure got back to us, we stop
-        # running and try to clean things up.
-        #
-        # We always return "output of the forward run" and "output of the destroy run" - these "output" values
-        # are either `None` or `Failure` instances. We don't check too often, all involved methods can accept
-        # these objects and decide what to do with them.
+            # Take a list of modules, and call a helper method for each module of the list. The helper function calls
+            # modules' methods, and these methods may raise exceptions. Should that happen, _safe_call` inside
+            # `_for_each_module` will wrap them with `Failure` instance, collecting the necessary data.
+            #
+            # Here we dispatch loops, wait for them to return, and if a failure got back to us, we stop
+            # running and try to clean things up.
+            #
+            # We always return "output of the forward run" and "output of the destroy run" - these "output" values
+            # are either `None` or `Failure` instances. We don't check too often, all involved methods can accept
+            # these objects and decide what to do with them.
 
-        failure = self._setup()
+            failure = self._setup()
 
-        if failure:
+            if failure:
+                return failure, self._destroy(failure=failure)
+
+            failure = self._sanity()
+
+            if failure:
+                return failure, self._destroy(failure=failure)
+
+            failure = self._execute()
+
             return failure, self._destroy(failure=failure)
-
-        failure = self._sanity()
-
-        if failure:
-            return failure, self._destroy(failure=failure)
-
-        failure = self._execute()
-
-        return failure, self._destroy(failure=failure)
 
 
 class NamedPipeline(Pipeline):
@@ -2409,6 +2431,12 @@ class Glue(Configurable):
             * module configuration files are searched under (--module-config-path):
         {}
 
+        Supported environment variables:
+
+        * GLUETOOL_TRACING_DISABLE - when set, tracing won't be enabled
+        * GLUETOOL_TRACING_SERVICE_NAME (string) - name of the trace produced by tool execution
+        * GLUETOOL_TRACING_REPORTING_HOST (string) - a hostname where tracing collector listens
+        * GLUETOOL_TRACING_REPORTING_PORT (int) - a port on which tracing collector listens
         """).format(module_dirs, data_dirs, module_config_dirs)
 
         self._parse_args(args,
