@@ -17,7 +17,6 @@ import enum
 import jinja2
 import mock
 import pkg_resources
-import six
 
 from .action import Action
 from .color import Colors, switch as switch_colors
@@ -604,6 +603,24 @@ class Pipeline(object):
 
         return None
 
+    def _log_failure(self, module, failure, label):
+        # type: (Module, Failure, str) -> None
+        """
+        Log a failure, and submit it to the Sentry.
+
+        :param Module module: module to use for logging - apparently, the failure appeared
+            when this module was running.
+        :param Failure failure: failure to log.
+        :param str label: label for loggign purposes.
+        """
+
+        module.error(
+            label.format(str(failure.exception) if failure.exception else ''),
+            exc_info=failure.exc_info
+        )
+
+        self.glue.sentry_submit_exception(failure, logger=self.logger)
+
     def _setup(self):
         # type: () -> Optional[Failure]
 
@@ -645,19 +662,13 @@ class Pipeline(object):
         # type: () -> Optional[Failure]
 
         def _do_execute(module):
-            # type: (Module) -> None
+            # type: (Module) -> Optional[Failure]
 
-            # Module's shared functions are registered after its `execute` method finishes. But we want to register
-            # module's shared function no matter whether its `execute` finished successfully, or crashed. We could
-            # wrap `execute` call with `try` and `finally``, and call module's `add_shared` there but should there
-            # be an exception under `try` (which can) **and** should there be another one under `finally` (oh, yes,
-            # it can!), the first exception would be lost, replaced by the later. And we cannot guarantee exception-less
-            # `add_shared`, it may have been replaced by module's developer.
-            #
-            # Therefore, we catch the (possible) exception raised by `execute`, save its info aside, register shared
-            # functions, and re-raise the exception. By the act of saving the exception info, we let our exception
-            # chaining to catch up with us - should `add_shared` raise any exception, it would correctly recognize
-            # the first one, connecting it as the predecesor in the exception chain.
+            # Safely call module's `execute` method. We get either `None`, which is good, or a `Failure`
+            # instance we can log, submit to Sentry and return to break the loop in `_for_each_module`.
+            # The failure would then be propagated to `run()` method and it would represent the cause
+            # that killed the pipeline.
+
             with Action(
                 'executing module',
                 parent=self.action,
@@ -666,27 +677,15 @@ class Pipeline(object):
                     'unique-name': module.unique_name
                 }
             ):
-                try:
-                    module.execute()
+                failure = self._safe_call(module.execute)
 
-                # pylint: disable=broad-except,unused-variable
-                except Exception as exc:  # noqa
-                    exc_info = sys.exc_info()
+            if failure:
+                self._log_failure(module, failure, 'Exception raised: {}')
 
-                    module.error('Exception raised: {}'.format(exc_info[1]), exc_info=exc_info)
+            # Always register module's shared functions
+            module.add_shared()
 
-                    # Make sure it's reported - we log it, we report it.
-                    self.glue.sentry_submit_exception(
-                        Failure(module=module, exc_info=exc_info),
-                        logger=self.logger
-                    )
-
-                    module.add_shared()
-
-                    six.reraise(*exc_info)
-
-                else:
-                    module.add_shared()
+            return failure
 
         return self._for_each_module(self.modules, _do_execute)
 
@@ -717,38 +716,23 @@ class Pipeline(object):
             # from `_destroy`, which then causes `_for_each_module` to quit loop immediately, propagating this
             # destroy failure even further.
 
-            def _do_destroy():
-                # type: () -> None
-
-                with Action(
-                    'destroying module',
-                    parent=self.action,
-                    logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
-                    tags={
-                        'unique-name': module.unique_name
-                    }
-                ):
-                    module.destroy(failure=failure)
-
             # We get either `None` or a failure if an exception was raised by `destroy`. If it's a failure,
             # we can log it with a bit more context.
-            destroy_failure = self._safe_call(_do_destroy)
+            with Action(
+                'destroying module',
+                parent=self.action,
+                logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
+                tags={
+                    'unique-name': module.unique_name
+                }
+            ):
+                destroy_failure = self._safe_call(module.destroy, failure=failure)
 
             if destroy_failure:
-                msg = "Exception raised while destroying module '{}': {}".format(
-                    module.unique_name,
-                    destroy_failure.exception.message if destroy_failure and destroy_failure.exception else ''
-                )
+                self._log_failure(module, destroy_failure, 'Exception raised while destroying module: {}')
 
-                # pylint: disable=unexpected-keyword-arg
-                self.error(msg, exc_info=destroy_failure.exc_info)
-                self.glue.sentry_submit_exception(destroy_failure, logger=self.logger)
-
-            # We're supposed to return `None` or `Failure` - `destroy_failure` is exactly what we can
-            # return without thinking about it. `destroy` call went well, and `destroy_failure` is `None`
-            # then, or it crashed and we have a `Failure` instance, which also good: it's going to
-            # break the loop in `_for_each_loop`, propagating this "destroy failure" furher, making it
-            # the last thing we ever produced (since `destroy` crashed, we can't trust anything, just bail).
+            # Just like in the case of `execute` above, return `destroy_failure` - it is either `None`
+            # or genuine `Failure` instance, representing the cause that killed the destroy stage.
             return destroy_failure
 
         final_failure = self._for_each_module(reversed(self.modules), _destroy)
