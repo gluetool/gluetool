@@ -249,6 +249,14 @@ class Action(object):
         cannot return anything reasonable. But there probably was an action, e.g. the one in
         the main thread, which could serve as "current action" for this thread. This method
         inserts it into the threads list, as the first action.
+
+        This is a combination of resetting the action stack followed by :py:meth:`_add_action`.
+        Cannot be replaced by ``_add_action`` though - ``_add_action`` *adds* action to the
+        existing stack, but this method promises to reset the stack: imagine re-using thread
+        as a worker for multiple workflows, each workflow should start with a clean slate,
+        with a different root - when work starts in the thread, it should call ``set_thread_root``
+        to initialize its actions stack with an action, given by whoever started the work from
+        the main thread.
         """
 
         # We shouldn't replace the list itself, only its content.
