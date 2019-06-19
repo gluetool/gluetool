@@ -96,8 +96,8 @@ class Tracer(object):
     TRACER = None  # type: Optional[TracingClientType]
 
     # pylint: disable=too-many-arguments
-    def __init__(self, service_name=None, logger=None, reporting_host=None, reporting_port=None, flush_timeout=None):
-        # type: (Optional[str], Optional[ContextAdapter], Optional[str], Optional[int], Optional[int]) -> None
+    def __init__(self, service_name=None, logger=None, reporting_host=None, reporting_port=None):
+        # type: (Optional[str], Optional[ContextAdapter], Optional[str], Optional[int]) -> None
 
         if not tracing_client or os.getenv(TRACING_DISABLE_ENVVAR):
             return
@@ -113,13 +113,10 @@ class Tracer(object):
         if not reporting_port:
             reporting_port = int(os.getenv(TRACING_REPORTING_PORT_ENVVAR, default=DEFAULT_TRACING_REPORTING_PORT))
 
-        if not flush_timeout:
-            self.flush_timeout = int(os.getenv(TRACING_FLUSH_TIMEOUT_ENVVAR, default=DEFAULT_TRACING_FLUSH_TIMEOUT))
-        else:
-            self.flush_timeout = flush_timeout
-
         config = tracing_client.Config(
             config={
+                # Using `const` sampler - the same sampling decission for all spans,
+                # and that decision is "record" (because `param == 1`).
                 'sampler': {
                     'type': 'const',
                     'param': 1
@@ -136,20 +133,31 @@ class Tracer(object):
 
         Tracer.TRACER = config.initialize_tracer()
 
-    def close(self):
-        # type: () -> None
+    def close(self, flush_timeout=None):
+        # type: (Optional[int]) -> None
+        """
+        Close the tracer - after this point, no spans won't be submitted to the remote service.
+
+        :param int flush_timeout: how long to wait for flushing the pending tracing spans. If not set,
+            environment variable ``{}`` is inspected. The default value is {} seconds.
+        """.format(TRACING_FLUSH_TIMEOUT_ENVVAR, DEFAULT_TRACING_FLUSH_TIMEOUT)
 
         if not Tracer.TRACER:
             return
 
+        # Make pylint happy about circular imports by not using global import.
+        # pylint: disable=cyclic-import
         from .utils import wait
+
+        if not flush_timeout:
+            flush_timeout = int(os.getenv(TRACING_FLUSH_TIMEOUT_ENVVAR, default=DEFAULT_TRACING_FLUSH_TIMEOUT))
 
         # yield to IOLoop to flush the spans - https://github.com/jaegertracing/jaeger-client-python/issues/50
         time.sleep(2)
 
         future = Tracer.TRACER.close()
 
-        wait('tracing flush', future.done, timeout=self.flush_timeout, tick=2, logger=self.logger)
+        wait('tracing flush', future.done, timeout=flush_timeout, tick=2, logger=self.logger)
 
 
 class Action(object):
@@ -207,7 +215,15 @@ class Action(object):
         Drop action from the list of unfinished actions of the current thread.
         """
 
-        Action._action_stack().remove(action)
+        try:
+            Action._action_stack().remove(action)
+
+        except ValueError:
+            # Avoid circullar imports (and make pylint silent)
+            # pylint: disable=cyclic-import
+            from .glue import GlueError
+
+            raise GlueError('Cannot remove action {}, it is not active'.format(action))
 
     @staticmethod
     def current_action():
@@ -235,6 +251,7 @@ class Action(object):
         inserts it into the threads list, as the first action.
         """
 
+        # We shouldn't replace the list itself, only its content.
         Action._action_stack()[:] = [action]
 
     def __init__(self, label, parent=None, tags=None, logger=None):
