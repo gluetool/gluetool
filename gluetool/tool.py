@@ -13,6 +13,7 @@ import traceback
 import tabulate
 
 import gluetool
+import gluetool.action
 import gluetool.sentry
 
 from gluetool import GlueError, GlueRetryError, Failure
@@ -64,6 +65,8 @@ class Gluetool(object):
         self.gluetool_config_paths = DEFAULT_GLUETOOL_CONFIG_PATHS
 
         self.sentry = None  # type: Optional[gluetool.sentry.Sentry]
+        self.tracer = None  # type: Optional[gluetool.action.Tracer]
+
         # pylint: disable=invalid-name
         self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
@@ -178,6 +181,11 @@ class Gluetool(object):
 
         logger = self._exit_logger
 
+        if self.tracer:
+            logger.info('Flushing tracing data')
+
+            self.tracer.close()
+
         (logger.debug if exit_status == 0 else logger.error)('Exiting with status {}'.format(exit_status))
 
         sys.exit(exit_status)
@@ -265,6 +273,7 @@ class Gluetool(object):
         # type: () -> None
 
         self.sentry = gluetool.sentry.Sentry()
+        self.tracer = gluetool.action.Tracer()
 
         # Python installs SIGINT handler that translates signal to
         # a KeyboardInterrupt exception. It's so good we want to use

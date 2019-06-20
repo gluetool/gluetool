@@ -943,6 +943,20 @@ class Logging(object):
         # add stderr handler
         logger.addHandler(Logging.stderr_handler)
 
+        # Extra handling for Jaeger logger:
+        # - replace it with a context adapter to keep track of what's being done by Jaeger code,
+        # - and patch its `info` with `debug` - Jaeger is logging things with INFO severity, which spoils
+        #   our output, DEBUG is perfectly fine for us.
+        jaeger_logger = logging.getLogger('jaeger_tracing')
+
+        if logger == jaeger_logger:
+            jaeger_context_adapter = PackageAdapter(Logging.get_logger(), 'tracing')
+
+            for attr in ('debug', 'info', 'warning', 'error', 'exception'):
+                setattr(logger, attr, getattr(jaeger_context_adapter, attr))
+
+            logger.info = logger.debug  # type: ignore
+
     @staticmethod
     def enable_logger_sentry(logger):
         # type: (Union[logging.Logger, ContextAdapter]) -> None
@@ -981,6 +995,7 @@ class Logging(object):
 
     OUR_LOGGERS = (
         logging.getLogger('gluetool'),
+        logging.getLogger('jaeger_tracing'),
         logging.getLogger('urllib3')
     )
 
