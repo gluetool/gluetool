@@ -182,9 +182,7 @@ class Gluetool(object):
         logger = self._exit_logger
 
         if self.tracer:
-            logger.info('Flushing tracing data')
-
-            self.tracer.close()
+            self.tracer.close(logger=logger)
 
         (logger.debug if exit_status == 0 else logger.error)('Exiting with status {}'.format(exit_status))
 
