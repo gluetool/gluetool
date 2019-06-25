@@ -52,6 +52,7 @@ import threading
 import time
 
 from .log import Logging
+from .result import Result
 
 try:
     import jaeger_client as tracing_client
@@ -133,17 +134,22 @@ class Tracer(object):
 
         Tracer.TRACER = config.initialize_tracer()
 
-    def close(self, flush_timeout=None):
-        # type: (Optional[int]) -> None
+    def close(self, flush_timeout=None, logger=None):
+        # type: (Optional[int], Optional[ContextAdapter]) -> None
         """
         Close the tracer - after this point, no spans won't be submitted to the remote service.
 
         :param int flush_timeout: how long to wait for flushing the pending tracing spans. If not set,
             environment variable ``{}`` is inspected. The default value is {} seconds.
+        :param ContextAdapter logger: logger to use for logging.
         """.format(TRACING_FLUSH_TIMEOUT_ENVVAR, DEFAULT_TRACING_FLUSH_TIMEOUT)
 
         if not Tracer.TRACER:
             return
+
+        logger = logger or self.logger
+
+        logger.info('Flushing tracing data')
 
         # Make pylint happy about circular imports by not using global import.
         # pylint: disable=cyclic-import
@@ -157,7 +163,12 @@ class Tracer(object):
 
         future = Tracer.TRACER.close()
 
-        wait('tracing flush', future.done, timeout=flush_timeout, tick=2, logger=self.logger)
+        def _check_flush():
+            # type: () -> Result[bool, str]
+
+            return Result.Ok(True) if future.done() else Result.Error('flush pending')
+
+        wait('tracing flush', _check_flush, timeout=flush_timeout, tick=2, logger=logger)
 
 
 class Action(object):
