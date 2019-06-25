@@ -34,8 +34,8 @@ class Result(Generic[T, E]):
         """
         .. warning::
 
-           Do not instantiate ``Result`` instrances directly, **always** use either
-           :py:func:`Ok` or :py:func:`Error` functions. Othwerise, type guarantees
+           Do not instantiate ``Result`` instances directly, **always** use either
+           :py:func:`Ok` or :py:func:`Error` functions. Otherwise, type guarantees
            cannot be given.
         """
 
@@ -69,7 +69,7 @@ class Result(Generic[T, E]):
         if self.is_ok:
             return 'Ok({})'.format(repr(self._value))
 
-        return 'Err({})'.format(repr(self._value))
+        return 'Error({})'.format(repr(self._value))
 
     # pylint: disable=invalid-name
     @classmethod
@@ -134,7 +134,6 @@ class Result(Generic[T, E]):
         # type: (str) -> T
         """
         Return the result value if it is valid. Otherwise, an exception is raised.
-        Return the value if it is an `Ok` type. Raises an `UnwrapError` if it is an `Err`.
         """
 
         if self.is_ok:
@@ -169,6 +168,9 @@ class Result(Generic[T, E]):
 # pylint: disable=invalid-name
 def Ok(value):
     # type: (T) -> Result[T, E]
+    """
+    Shortcut function to create a new valid Result.
+    """
 
     return Result.Ok(value)
 
@@ -177,7 +179,7 @@ def Ok(value):
 def Error(error):
     # type: (E) -> Result[T, E]
     """
-    Shortcut function to create a new Result.
+    Shortcut function to create a new error Result.
     """
 
     return Result.Error(error)
