@@ -31,6 +31,7 @@ import requests as original_requests
 import ruamel.yaml
 
 from gluetool import GlueError, SoftGlueError, GlueCommandError
+from .result import Result
 from .log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict, print_wrapper, PackageAdapter
 
 # Type annotations
@@ -1503,20 +1504,24 @@ class PatternMap(object):
         raise GlueError("Could not match string '{}' with any pattern".format(s), sentry_fingerprint=[s])
 
 
-def wait(label, check, timeout=None, tick=30, logger=None):
-    # type: (str, Callable[[], Any], Optional[int], Optional[int], Optional[ContextAdapter]) -> Any
+WaitCheckType = Callable[[], Result[Any, Any]]
 
+
+def wait(label, check, timeout=None, tick=30, logger=None):
+    # type: (str, WaitCheckType, Optional[int], int, Optional[ContextAdapter]) -> Any
     """
     Wait for a condition to be true.
 
     :param str label: printable label used for logging.
-    :param callable check: called to test the condition. If its return value is a tuple and the first item
-        evaluates as ``True`` or it is not a tuple and its return value evaluates as ``True``,
-        the condition is assumed to pass the test and waiting ends.
+    :param callable check: called to test the condition. It must be of type :py:data:`WaitCheckType`: takes
+        no arguments, must return instance of :py:class:`gluetool.Result`. If the result is valid, the condition
+        is assumed to pass the check and waiting ends.
     :param int timeout: fail after this many seconds. ``None`` means test forever.
     :param int tick: test condition every ``tick`` seconds.
     :param gluetool.log.ContextAdapter logger: parent logger whose methods will be used for logging.
     :raises gluetool.glue.GlueError: when ``timeout`` elapses while condition did not pass the check.
+    :returns: if the condition became true, the value returned by the ``check`` function
+        is returned. It is unpacked from the ``Result`` returned by ``check``.
     """
 
     if not isinstance(tick, int):
@@ -1540,15 +1545,15 @@ def wait(label, check, timeout=None, tick=30, logger=None):
 
     while timeout is None or time.time() < end_time:
         logger.debug("calling callback function")
-        ret = check()
 
-        # If ret is a tuple, use the first item to evaluate. This is useful if the wait function
-        # returns some output you want to process later ...
-        if (isinstance(ret, tuple) and ret[0]) or (not isinstance(ret, tuple) and ret):
+        check_result = check()
+
+        if check_result.is_ok:
             logger.debug('check passed, assuming success')
-            return ret
 
-        logger.debug("check failed with {}, assuming failure".format(ret))
+            return check_result.value
+
+        logger.debug("check failed with '{}', assuming failure".format(check_result.value))
 
         logger.debug('{} left, sleeping for {} seconds'.format(_timeout(), tick))
         time.sleep(tick)
