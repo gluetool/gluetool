@@ -36,11 +36,15 @@ from .log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, Union  # noqa
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
 from .log import LoggingFunctionType, LoggingWarningFunctionType  # noqa
 
 if TYPE_CHECKING:
     import logging  # noqa
+
+
+# Type variable used in generic types
+T = TypeVar('T')
 
 
 try:
@@ -1504,11 +1508,19 @@ class PatternMap(object):
         raise GlueError("Could not match string '{}' with any pattern".format(s), sentry_fingerprint=[s])
 
 
-WaitCheckType = Callable[[], Result[Any, Any]]
+# The type of `wait` is a bit complicated: callback returns `Result` instance with either valid value A, or
+# error B. `wait` us supposed to return `A` when finished successfully - it raises an timeout exception otherwise
+# anyway, so there's no returning of B. So, given that `check` returns value of type `Result[T, E]`, we can
+# deduce that `wait` must return value of type T. The trick is to use `T` in both `WaitCheckType` and
+# `wait` signature.
+
+#: Generic type for callbacks used by :py:func:`wait` function. Accepts no arguments, returns an instance
+#: of :py:class:`gluetool.result.Result`.
+WaitCheckType = Callable[[], Result[T, Any]]
 
 
 def wait(label, check, timeout=None, tick=30, logger=None):
-    # type: (str, WaitCheckType, Optional[int], int, Optional[ContextAdapter]) -> Any
+    # type: (str, WaitCheckType[T], Optional[int], int, Optional[ContextAdapter]) -> T
     """
     Wait for a condition to be true.
 
@@ -1551,7 +1563,7 @@ def wait(label, check, timeout=None, tick=30, logger=None):
         if check_result.is_ok:
             logger.debug('check passed, assuming success')
 
-            return check_result.value
+            return check_result.unwrap()
 
         logger.debug("check failed with '{}', assuming failure".format(check_result.value))
 
