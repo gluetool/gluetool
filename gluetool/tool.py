@@ -221,7 +221,7 @@ class Gluetool(object):
         logger.error(msg, exc_info=failure.exc_info)
 
         # Submit what hasn't been submitted yet...
-        if self.sentry is not None and failure.sentry_event_id is None:
+        if self.sentry and not failure.sentry_event_id:
             self.sentry.submit_exception(failure, logger=logger)
 
         self._quit(exit_status)
