@@ -606,7 +606,7 @@ class Pipeline(object):
     def _log_failure(self, module, failure, label):
         # type: (Module, Failure, str) -> None
         """
-        Log a failure, and submit it to the Sentry.
+        Log a failure, and submit it to Sentry.
 
         :param Module module: module to use for logging - apparently, the failure appeared
             when this module was running.
