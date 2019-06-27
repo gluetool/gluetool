@@ -603,21 +603,29 @@ class Pipeline(object):
 
         return None
 
-    def _log_failure(self, module, failure, label):
-        # type: (Module, Failure, str) -> None
+    def _log_failure(self, module, failure, label=None):
+        # type: (Module, Failure, Optional[str]) -> None
         """
         Log a failure, and submit it to Sentry.
 
         :param Module module: module to use for logging - apparently, the failure appeared
             when this module was running.
         :param Failure failure: failure to log.
-        :param str label: label for loggign purposes.
+        :param str label: label for logging purposes. If it's set and exception exists, exception
+            message is appended. If it's not set and exception exists, exception message is used.
+            If failure has no exception, a generic message is the final choice.
         """
 
-        module.error(
-            label.format(str(failure.exception) if failure.exception else ''),
-            exc_info=failure.exc_info
-        )
+        if label and failure.exception:
+            label = '{}: {}'.format(label, failure.exception)
+
+        elif failure.exception:
+            label = str(failure.exception)
+
+        else:
+            label = 'Exception raised'
+
+        module.error(label, exc_info=failure.exc_info)
 
         self.glue.sentry_submit_exception(failure, logger=self.logger)
 
@@ -651,10 +659,21 @@ class Pipeline(object):
         # type: () -> Optional[Failure]
 
         def _do_sanity(module):
-            # type: (Module) -> None
+            # type: (Module) -> Optional[Failure]
 
-            module.sanity()
-            module.check_required_options()
+            failure = self._safe_call(module.sanity)
+
+            if failure:
+                self._log_failure(module, failure)
+                return failure
+
+            failure = self._safe_call(module.check_required_options)
+
+            if failure:
+                self._log_failure(module, failure)
+                return failure
+
+            return None
 
         return self._for_each_module(self.modules, _do_sanity)
 
@@ -680,7 +699,7 @@ class Pipeline(object):
                 failure = self._safe_call(module.execute)
 
             if failure:
-                self._log_failure(module, failure, 'Exception raised: {}')
+                self._log_failure(module, failure, label='Exception raised')
 
             # Always register module's shared functions
             module.add_shared()
@@ -729,7 +748,7 @@ class Pipeline(object):
                 destroy_failure = self._safe_call(module.destroy, failure=failure)
 
             if destroy_failure:
-                self._log_failure(module, destroy_failure, 'Exception raised while destroying module: {}')
+                self._log_failure(module, destroy_failure, label='Exception raised while destroying module')
 
             # Just like in the case of `execute` above, return `destroy_failure` - it is either `None`
             # or genuine `Failure` instance, representing the cause that killed the destroy stage.
