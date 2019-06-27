@@ -150,8 +150,8 @@ def test_pipeline_setup(pipeline):
 def test_pipeline_sanity(pipeline, monkeypatch):
     pipeline._setup()
 
-    monkeypatch.setattr(pipeline.modules[0], 'sanity', MagicMock())
-    monkeypatch.setattr(pipeline.modules[0], 'check_required_options', MagicMock())
+    monkeypatch.setattr(pipeline.modules[0], 'sanity', MagicMock(return_value=None))
+    monkeypatch.setattr(pipeline.modules[0], 'check_required_options', MagicMock(return_value=None))
 
     pipeline._sanity()
 
