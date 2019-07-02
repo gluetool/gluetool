@@ -44,7 +44,7 @@ def test_load(json_data, log, tmpdir):
     loaded = load_json(filepath)
 
     assert json_data == loaded
-    assert log.match(message="loaded JSON data from '{}':\n{}".format(filepath, gluetool.utils.format_dict(json_data)))
+    assert log.match(message="loaded JSON data from '{}':\n{}".format(filepath, gluetool.log.format_dict(json_data)))
 
 
 def test_error(tmpdir):

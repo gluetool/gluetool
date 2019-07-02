@@ -156,6 +156,13 @@ class Sentry(object):
         Prepare common arguments, and then submit the data to the Sentry server.
         """
 
+        #
+        # After this line, we CANNOT log with `sentry=True`!
+        #
+        # This function might have been called by logger's method, e.g. logger.warn(..., sentry=True),
+        # if we'd log with sentry=True, we'd use the same logger, getting into possibly infinite recursion.
+        #
+
         tags = kwargs.pop('tags', {})
         fingerprint = kwargs.pop('fingerprint', ['{{ default }}'])
 
@@ -173,10 +180,10 @@ class Sentry(object):
                 kwargs['exc_info'] = failure.exc_info
 
             if hasattr(failure.exception, 'sentry_fingerprint'):
-                fingerprint = failure.exception.sentry_fingerprint(fingerprint)  # type: ignore  # use hasattr to check
+                fingerprint = failure.exception.sentry_fingerprint(fingerprint)
 
             if hasattr(failure.exception, 'sentry_tags'):
-                tags = failure.exception.sentry_tags(tags)  # type: ignore  # use hasattr to check
+                tags = failure.exception.sentry_tags(tags)
 
         assert self._client is not None
         event_id = self._client.capture(event_type, tags=tags, fingerprint=fingerprint, **kwargs)  # type: str
@@ -216,11 +223,11 @@ class Sentry(object):
 
         return self._capture('raven.events.Exception', logger=logger, failure=failure, **kwargs)
 
-    def submit_warning(self, msg, logger=None, **kwargs):
+    def submit_message(self, msg, logger=None, **kwargs):
         # type: (str, Optional[gluetool.log.ContextAdapter], **Any) -> Optional[str]
 
         """
-        Submits a warning to the Sentry server. You might feel the need to share arbitrary
+        Submits a message to the Sentry server. You might feel the need to share arbitrary
         issues - e.g. warnings that are not serious enough to kill the pipeline - with the
         world.
 

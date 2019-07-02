@@ -32,12 +32,13 @@ import ruamel.yaml
 
 from gluetool import GlueError, SoftGlueError, GlueCommandError
 from .result import Result
-from .log import Logging, ContextAdapter, log_blob, BlobLogger, format_dict, log_dict, print_wrapper, PackageAdapter
+from .log import Logging, ContextAdapter, PackageAdapter, LoggerMixin, BlobLogger, \
+    log_blob, log_dict, print_wrapper
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
 from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
-from .log import LoggingFunctionType, LoggingWarningFunctionType  # noqa
+from .log import LoggingFunctionType  # noqa
 
 if TYPE_CHECKING:
     import logging  # noqa
@@ -280,7 +281,7 @@ class ThreadAdapter(ContextAdapter):
         super(ThreadAdapter, self).__init__(logger, {'ctx_thread_name': (5, thread.name)})
 
 
-class WorkerThread(threading.Thread):
+class WorkerThread(LoggerMixin, threading.Thread):
     """
     Worker threads gets a job to do, and returns a result. It gets a callable, ``fn``,
     which will be called in thread's ``run()`` method, and thread's ``result`` property
@@ -293,18 +294,11 @@ class WorkerThread(threading.Thread):
     :param fn_kwargs: keyword arguments for `fn`
     """
 
-    # type stubs
-    # pylint: disable=not-callable
-    debug = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
-
     def __init__(self, logger, fn, fn_args=None, fn_kwargs=None, **kwargs):
         # type: (ContextAdapter, Callable[..., Any], Optional[Tuple[str, ...]], Optional[Dict[Any, Any]], **Any) -> None
 
         threading.Thread.__init__(self, **kwargs)
-
-        self.logger = ThreadAdapter(logger, self)
-        self.logger.connect(self)
+        LoggerMixin.__init__(self, ThreadAdapter(logger, self))
 
         self._fn = fn
         self._args = fn_args or ()
@@ -424,7 +418,7 @@ class ProcessOutput(object):
                 logger.debug('{}:\n  command forwarded the output to its parent'.format(stream))
 
         else:
-            log_blob(logger.verbose, stream, content)  # type: ignore  # ContextAdapter *does* have `verbose`
+            log_blob(logger.verbose, stream, content)
 
     def log(self, logger):
         # type: (ContextAdapter) -> None
@@ -435,7 +429,7 @@ class ProcessOutput(object):
         self.log_stream('stderr', logger)
 
 
-class Command(object):
+class Command(LoggerMixin, object):
     """
     Wrap an external command, its options and other information, necessary for running the command.
 
@@ -471,19 +465,10 @@ class Command(object):
 
     # pylint: disable=too-few-public-methods
 
-    # Logging type stubs
-    verbose = cast(LoggingFunctionType, lambda s: None)
-    debug = cast(LoggingFunctionType, lambda s: None)
-    info = cast(LoggingFunctionType, lambda s: None)
-    warn = cast(LoggingWarningFunctionType, lambda s: None)
-    error = cast(LoggingFunctionType, lambda s: None)
-    exception = cast(LoggingFunctionType, lambda s: None)
-
     def __init__(self, executable, options=None, logger=None):
         # type: (List[str], Optional[List[str]], Optional[ContextAdapter]) -> None
 
-        self.logger = logger or Logging.get_logger()
-        self.logger.connect(self)
+        super(Command, self).__init__(logger or Logging.get_logger())
 
         self.executable = executable
         self.options = options or []
@@ -819,7 +804,7 @@ def fetch_url(url, logger=None, success_codes=(200,)):
     except urllib2.HTTPError as exc:
         raise GlueError("Failed to fetch URL '{}': {}".format(url, exc))
 
-    log_blob(logger.debug, '{}: {}'.format(url, code), content)  # type: ignore  # logger.debug signature is compatible
+    log_blob(logger.debug, '{}: {}'.format(url, code), content)
 
     if code not in success_codes:
         raise GlueError("Unsuccessfull response from '{}'".format(url))
@@ -870,7 +855,7 @@ def requests(logger=None):
 
     # Start capturing ``print`` statements - they are used to provide debug messages, therefore
     # using ``debug`` level.
-    with print_wrapper(log_fn=httplib_logger.debug):  # type: ignore  # logger.debug signature is compatible
+    with print_wrapper(log_fn=httplib_logger.debug):
         # To log responses and their content, we must take a look at ``Response`` instance
         # returned by several entry methods (``get``, ``post``, ...). To do that, we have
         # a simple wrapper function.
@@ -883,7 +868,7 @@ def requests(logger=None):
             ret = original_method(*args, **kwargs)
 
             assert logger is not None
-            log_blob(logger.debug,  # type: ignore  # logger.debug signature is compatible
+            log_blob(logger.debug,
                      'response content',
                      ret.content)
 
@@ -964,8 +949,8 @@ def render_template(template, logger=None, **kwargs):
 
             assert logger is not None
 
-            log_blob(logger.debug, 'rendering template', source)  # type: ignore  # logger.debug signature is compatible
-            log_dict(logger.verbose, 'context', kwargs)  # type: ignore  # ContextAdapter *does* have `verbose`
+            log_blob(logger.debug, 'rendering template', source)
+            log_dict(logger.verbose, 'context', kwargs)
 
             return str(template.render(**kwargs).strip())
 
@@ -1043,7 +1028,7 @@ def load_yaml(filepath, logger=None):
         with open(real_filepath, 'r') as f:
             data = YAML().load(f)
 
-        logger.debug("loaded YAML data from '{}':\n{}".format(filepath, format_dict(data)))
+        log_dict(logger.debug, "loaded YAML data from '{}'".format(filepath), data)
 
         return data
 
@@ -1145,7 +1130,7 @@ def load_json(filepath, logger=None):
     try:
         with open(real_filepath, 'r') as f:
             data = _json_byteify(json.load(f, object_hook=_json_byteify), ignore_dicts=True)
-            logger.debug("loaded JSON data from '{}':\n{}".format(filepath, format_dict(data)))
+            log_dict(logger.debug, "loaded JSON data from '{}'".format(filepath), data)
 
             return data
 
@@ -1222,7 +1207,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     return _render_template
 
 
-class SimplePatternMap(object):
+class SimplePatternMap(LoggerMixin, object):
     # pylint: disable=too-few-public-methods
 
     """
@@ -1239,21 +1224,10 @@ class SimplePatternMap(object):
         ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
-    # logging type stubs
-    # pylint: disable=not-callable
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
-
     def __init__(self, filepath, logger=None, allow_variables=False):
         # type: (str, Optional[ContextAdapter], bool) -> None
 
-        self.logger = logger or Logging.get_logger()
-
-        self.logger.connect(self)
+        super(SimplePatternMap, self).__init__(logger or Logging.get_logger())
 
         pattern_map = load_yaml(filepath, logger=self.logger)
 
@@ -1313,7 +1287,7 @@ class SimplePatternMap(object):
         raise GlueError("Could not match string '{}' with any pattern".format(s))
 
 
-class PatternMap(object):
+class PatternMap(LoggerMixin, object):
     # pylint: disable=too-few-public-methods
 
     """
@@ -1368,15 +1342,6 @@ class PatternMap(object):
         ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
-    # logging type stubs
-    # pylint: disable=not-callable
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
-
     def __init__(self,
                  filepath,  # type: str
                  spices=None,  # type: Optional[Dict[str, Callable[..., Callable[[Any, str], str]]]]
@@ -1385,9 +1350,7 @@ class PatternMap(object):
                 ):  # noqa
         # type: (...) -> None
 
-        self.logger = logger or Logging.get_logger()
-
-        self.logger.connect(self)
+        super(PatternMap, self).__init__(logger or Logging.get_logger())
 
         spices = spices or {}
 

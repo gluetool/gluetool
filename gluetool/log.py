@@ -12,31 +12,25 @@ Example usage:
 .. code-block:: python
 
    # initialize logger as soon as possible
-   logger = Logging.create_logger()
+   Logging.setup_logger()
+   logger = Logging.get_logger()
 
    # now it's possible to use it for logging:
    logger.debug('foo!')
-
-   # or connect it with current instance (if you're doing all this
-   # inside some class' constructor):
-   logger.connect(self)
-
-   # now you can access logger's methods directly:
-   self.debug('foo once again!')
 
    # find out what your logging should look like, e.g. by parsing command-line options
    ...
 
    # tell logger about the final setup
-   logger = Logging.create_logger(output_file='/tmp/foo.log', level=...)
+   logger = Logging.setup_logger(output_file='/tmp/foo.log', level=...)
 
-   # and, finally, create a root context logger - when we create another loggers during
-   # the code flow, this context logger will be in the root of this tree of loggers.
-   logger = ContextAdapter(logger)
+   # when you want to make logging methods easily accessible in your class, throw in
+   # LoggerMixin:
+   class Foo(LoggerMixin, ...):
+     def __init__(self, some_logger):
+         super(Foo, self).__init__(logger)
 
-   # don't forget to re-connect with the context logger if you connected your instance
-   # with previous logger, to make sure helpers are set correctly
-   logger.connect(self)
+         self.debug('foo!')
 """
 
 import atexit
@@ -57,8 +51,8 @@ from .color import Colors
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order, line-too-long
 from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
-from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
+from mypy_extensions import Arg, DefaultArg, NamedArg, DefaultNamedArg, VarArg, KwArg  # noqa
 
 if TYPE_CHECKING:
     # pylint: disable=cyclic-import
@@ -69,26 +63,19 @@ if TYPE_CHECKING:
 # Type definitions
 # pylint: disable=invalid-name
 ExceptionInfoType = Union[
-    Tuple[Optional[type], Optional[BaseException], Optional[TracebackType]]
+    Tuple[Optional[type], Optional[BaseException], Optional[TracebackType]],  # returned by sys.exc_info()
+    Tuple[None, None, None]
 ]
 
-
-class LoggingFunctionType(Protocol):
-    # pylint: disable=too-few-public-methods
-
-    def __call__(self, message, exc_info=None, extra=None, **kwargs):
-        # type: (Any, Optional[Union[bool, ExceptionInfoType]], Optional[Dict[str, Any]], **Any) -> None
-
-        pass
-
-
-class LoggingWarningFunctionType(Protocol):
-    # pylint: disable=too-few-public-methods
-
-    def __call__(self, message, exc_info=None, extra=None, sentry=False, **kwargs):
-        # type: (Any, Optional[ExceptionInfoType], Optional[Dict[str, Any]], Optional[bool], **Any) -> None
-
-        pass
+LoggingFunctionType = Callable[
+    [
+        Arg(str),
+        DefaultNamedArg(ExceptionInfoType, 'exc_info'),
+        DefaultNamedArg(Dict[str, Any], 'extra'),
+        DefaultNamedArg(bool, 'sentry')
+    ],
+    None
+]
 
 
 BLOB_HEADER = '---v---v---v---v---v---'
@@ -101,96 +88,6 @@ DEFAULT_LOG_LEVEL = logging.DEBUG if os.getenv('GLUETOOL_DEBUG') else logging.IN
 # gluetool's told to store it into a file. It's goal is to capture very verbose log records,
 # e.g. raw output of commands or API responses.
 VERBOSE = 5
-
-
-# Methods we "patch" logging.Logger and logging.LoggerAdapter with
-def verbose_logger(self, message, *args, **kwargs):
-    # type: (logging.Logger, str, *Any, **Any) -> None
-
-    if not self.isEnabledFor(VERBOSE):
-        return
-
-    # When we are expected to emit record of VERBOSE level, make a DEBUG note
-    # as well, to "link" debug and verbose outputs. With this, one might read
-    # DEBUG log, and use this reference to find corresponding VERBOSE record.
-    # Adding time.time() as a salt - tag is based on message hash, it may be
-    # logged multiple times, leading to the same tag.
-    tag = hashlib.md5('{}: {}'.format(time.time(), message)).hexdigest()
-
-    # add verbose tag as a context, with very high priority
-    if 'extra' not in kwargs:
-        kwargs['extra'] = {}
-
-    kwargs['extra']['ctx_verbose_tag'] = (1000, 'VERBOSE {}'.format(tag))
-
-    # Verbose message should give some hint. It must contain the tag, but it could also start
-    # with a hint!
-    keep_len = 12
-
-    if len(message) <= keep_len:
-        hint = message
-
-    else:
-        new_line_index = message.find('\n')
-
-        if new_line_index == -1:
-            hint = '{}...'.format(message[0:keep_len])
-
-        elif new_line_index == keep_len:
-            hint = message
-
-        elif new_line_index < keep_len:
-            hint = message[0:new_line_index]
-
-        else:
-            hint = '{}...'.format(message[0:keep_len])
-
-    verbose_message = '{} (See "verbose" log for the actual message)'.format(hint)
-
-    # pylint: disable-msg=protected-access
-    self._log(logging.DEBUG, verbose_message, args, **kwargs)  # type: ignore  # mypy thinks Logger._log does not exist
-    self._log(VERBOSE, message, args, **kwargs)  # type: ignore
-
-
-def verbose_adapter(self, message, *args, **kwargs):
-    # type: (ContextAdapter, str, *Any, **Any) -> None
-
-    new_message, new_kwargs = self.process(message, kwargs)
-    self.logger.verbose(new_message, *args, **new_kwargs)  # type: ignore  # ContextAdapter.logger *does* exist
-
-
-def warn_sentry(self, message, *args, **kwargs):
-    # type: (ContextAdapter, str, *Any, **Any) -> None
-
-    """
-    Beside calling the original the ``warning`` method (stored as ``self.orig_warning``),
-    this one also submits warning to the Sentry server when asked to do so by a keyword
-    argument ``sentry`` set to ``True``.
-    """
-
-    if 'sentry' in kwargs:
-        report_to_sentry = kwargs['sentry'] and getattr(self, 'sentry_submit_warning', None) is not None
-        del kwargs['sentry']
-
-    else:
-        report_to_sentry = False
-
-    self.orig_warning(message, *args, **kwargs)  # type: ignore  # set by an assignment to logging.LoggerAdapter
-
-    if report_to_sentry:
-        self.sentry_submit_warning(message, logger=self, **kwargs)
-
-
-logging.Logger.orig_warning = logging.Logger.warning  # type: ignore  # `orig_warning` is created
-logging.Logger.warning = warn_sentry  # type: ignore  # `warn_sentry` has compatible type
-logging.Logger.warn = warn_sentry  # type: ignore  # `warn_sentry` has compatible type
-
-logging.LoggerAdapter.orig_warning = logging.LoggerAdapter.warning  # type: ignore  # `orig_warning` is created
-logging.LoggerAdapter.warning = warn_sentry  # type: ignore  # `warn_sentry` has compatible type
-logging.LoggerAdapter.warn = warn_sentry  # type: ignore  # `warn` is created
-
-logging.Logger.verbose = verbose_logger  # type: ignore  # `verbose` is created
-logging.LoggerAdapter.verbose = verbose_adapter  # type: ignore  # `verbose` is created
 
 
 _TRACEBACK_TEMPLATE = """
@@ -323,7 +220,7 @@ def print_wrapper(log_fn=None, label='print wrapper'):
         captured output.
     """
 
-    log_fn = log_fn or Logging.get_logger().info  # type: ignore  # types are compatible
+    log_fn = log_fn or Logging.get_logger().info
     assert log_fn is not None
 
     fake_stream = StreamToLogger(log_fn)
@@ -551,7 +448,16 @@ class ContextAdapter(logging.LoggerAdapter):
     (lower priority means context will be placed closer to the beggining of
     the line - highest priority comes last.
 
-    :param logging.Logger logger: parent logger this adapter modifies.
+    ``ContextAdapter`` is a corner stone of our logging infrastructure, **everything** is
+    supposed to, one way or another, to use this class (or one of its children) for logging.
+    We should avoid using bare ``Logger`` instances because they lack context propagation,
+    message routing to debug and verbose files, ``verbose`` method & ``sentry`` parameter.
+
+    Parent class, :py:class:`logging.LoggerAdapter`, provides all common logging methods.
+    We overload them with our own implementations because we want to 1) handle type annotations
+    on our side, 2) let users submit messages to Sentry.
+
+    :param logger: parent logger this adapter modifies.
     :param dict extras: additional extra keys passed to the parent class.
         The dictionary is then used to update messages' ``extra`` key with
         the information about context.
@@ -565,9 +471,6 @@ class ContextAdapter(logging.LoggerAdapter):
         self._logger = logger
         self.name = logger.name  # type: str
 
-        self.warn = self.warning
-        self.sentry_submit_warning = getattr(logger, 'sentry_submit_warning', None)
-
     def addHandler(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
 
@@ -580,49 +483,128 @@ class ContextAdapter(logging.LoggerAdapter):
 
     def process(self, msg, kwargs):
         # type: (str, MutableMapping[str, Any]) -> Tuple[str, MutableMapping[str, Any]]
-
         """
         Original ``process`` overwrites ``kwargs['extra']`` which doesn't work
         for us - we want to chain adapters, getting more and more contexts
         on the way. Therefore ``update`` instead of assignment.
         """
 
-        if 'extra' not in kwargs:
+        if 'extra' not in kwargs or kwargs['extra'] is None:
             kwargs['extra'] = {}
 
         kwargs['extra'].update(self.extra)  # type: ignore  # `self.extra` does exist
         return msg, kwargs
 
-    def connect(self, parent):
-        # type: (Any) -> None
+    # pylint: disable=too-many-arguments,arguments-differ
+    def log(self, level, msg, exc_info=None, extra=None, sentry=False):  # type: ignore  #  Signature of "log" incompatible with supertype "LoggerAdapter"
+        # type: (int, str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
-        """
-        Create helper methods in ``parent``, by assigning adapter's methods to its
-        attributes. One can then call ``parent.debug`` and so on, instead of less
-        readable ``parent.logger.debug``.
+        msg, kwargs = self.process(
+            msg,
+            # yes, process doesn't accept **kwargs...
+            {
+                'exc_info': exc_info,
+                'extra': extra
+            }
+        )
 
-        Simply instantiate adapter and call its ``connect`` with an object as
-        a ``parent`` argument, and the object will be enhanced with all these
-        logging helpers.
+        self._logger.log(level, msg, **kwargs)
 
-        :param parent: object to enhance with logging helpers.
-        """
+        if sentry and Logging.sentry:
+            Logging.sentry.submit_message(msg, logger=self)
 
-        parent.debug = self.debug
-        parent.verbose = self.verbose  # type: ignore  # `ContextAdapter` *does* have `verbose`
-        parent.info = self.info
-        parent.warn = self.warning
-        parent.error = self.error
-        parent.exception = self.exception
+    def isEnabledFor(self, level):
+        # type: (int) -> Any
+
+        return self._logger.isEnabledFor(level)
+
+    def verbose(self, msg, exc_info=None, extra=None, sentry=False):
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        if not self.isEnabledFor(VERBOSE):
+            return
+
+        # When we are expected to emit record of VERBOSE level, make a DEBUG note
+        # as well, to "link" debug and verbose outputs. With this, one might read
+        # DEBUG log, and use this reference to find corresponding VERBOSE record.
+        # Adding time.time() as a salt - tag is based on message hash, it may be
+        # logged multiple times, leading to the same tag.
+        tag = hashlib.md5('{}: {}'.format(time.time(), msg)).hexdigest()
+
+        # add verbose tag as a context, with very high priority
+        extra = extra or {}
+
+        extra['ctx_verbose_tag'] = (1000, 'VERBOSE {}'.format(tag))
+
+        # Verbose message should give some hint. It must contain the tag, but it could also start
+        # with a hint!
+        keep_len = 12
+
+        if len(msg) <= keep_len:
+            hint = msg
+
+        else:
+            new_line_index = msg.find('\n')
+
+            if new_line_index == -1:
+                hint = '{}...'.format(msg[0:keep_len])
+
+            elif new_line_index == keep_len:
+                hint = msg
+
+            elif new_line_index < keep_len:
+                hint = msg[0:new_line_index]
+
+            else:
+                hint = '{}...'.format(msg[0:keep_len])
+
+        placeholder_message = '{} (See "verbose" log for the actual message)'.format(hint)
+
+        self.log(logging.DEBUG, placeholder_message, exc_info=exc_info, extra=extra, sentry=sentry)
+        self.log(VERBOSE, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    # pylint: disable=arguments-differ
+    def debug(self, msg, exc_info=None, extra=None, sentry=False):  # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(logging.DEBUG, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    # pylint: disable=arguments-differ
+    def info(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(logging.INFO, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    # pylint: disable=arguments-differ
+    def warning(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(logging.WARNING, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    warn = warning
+
+    # pylint: disable=arguments-differ
+    def error(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(logging.ERROR, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    # pylint: disable=arguments-differ
+    def exception(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(logging.ERROR, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
 
 class ModuleAdapter(ContextAdapter):
     """
     Custom logger adapter, adding module name as a context.
 
-    :param logging.Logger logger: parent logger this adapter modifies.
+    :param logger: parent logger this adapter modifies.
     :param gluetool.glue.Module module: module whose name is added as a context.
     """
+
+    # pylint: disable=too-few-public-methods
 
     def __init__(self, logger, module):
         # type: (ContextAdapter, gluetool.Module) -> None
@@ -630,12 +612,36 @@ class ModuleAdapter(ContextAdapter):
         super(ModuleAdapter, self).__init__(logger, {'ctx_module_name': (10, module.unique_name)})
 
 
+class LoggerMixin(object):
+    """
+    Use as a parent class (or one of them) when you want to "attach" methods of a given
+    logger to class' instances.
+
+    :param ContextAdapter logger: logger to propagate.
+    """
+
+    # pylint: disable=too-few-public-methods
+
+    def __init__(self, logger):
+        # type: (ContextAdapter) -> None
+
+        self.logger = logger
+
+        self.log = logger.log
+        self.verbose = logger.verbose
+        self.debug = logger.debug
+        self.info = logger.info
+        self.warning = self.warn = logger.warning
+        self.error = logger.error
+        self.exception = logger.exception
+
+
 class PackageAdapter(ContextAdapter):
     """
     Custom logger dapter, adding a package name as a context. Intended to taint log
     records produced by a 3rd party packages.
 
-    :logging.Logger logger: parent logger this adapter modifies.
+    :param logger: parent logger this adapter modifies.
     :param str name: name of the library.
     """
 
@@ -844,7 +850,7 @@ class JSONLoggingFormatter(logging.Formatter):
         _add_cause(exc_info[1], exc_info[2])
 
         while exc_info[1] and getattr(exc_info[1], 'caused_by', None) is not None:
-            exc_info = exc_info[1].caused_by  # type: ignore  # we estblished above exc_info[1] has `caused_by`
+            exc_info = exc_info[1].caused_by
 
             _add_cause(exc_info[1], exc_info[2])
 
@@ -879,9 +885,11 @@ class Logging(object):
     """
 
     #: Logger singleton - if anyone asks for a logger, they will get this one. Needs
-    #: to be properly initialized by calling :py:meth:`create_logger`.
-    logger = None  # logging.Logger
+    #: to be properly initialized by calling :py:meth:`setup_logger`.
     adapted_logger = None  # type: ContextAdapter
+
+    #: Bare root logger we're hiding inside ``adapted_logger``
+    logger = None  # logging.Logger
 
     #: Stream handler printing out to stderr.
     stderr_handler = None  # type: logging.StreamHandler
@@ -891,7 +899,6 @@ class Logging(object):
     json_file_handler = None
 
     sentry = None  # type: Optional[gluetool.sentry.Sentry]
-    sentry_submit_warning = None  # type: Optional[Callable[..., None]]
 
     @staticmethod
     def get_logger():
@@ -900,15 +907,12 @@ class Logging(object):
         """
         Returns a logger-like object suitable for logging stuff.
 
-        Expects there was a call to :py:meth:`create_logger` method before calling this method
-        that would actually create and set up the logger.
-
         :rtype: ContextAdapter
         :returns: an instance of ContextAdapter wrapping root logger, or ``None`` when there's no logger yet.
         """
 
         if Logging.logger is None:
-            Logging.create_logger()
+            Logging.setup_logger()
 
         if Logging.adapted_logger is None:
             Logging.adapted_logger = ContextAdapter(Logging.logger)
@@ -925,7 +929,6 @@ class Logging(object):
     @staticmethod
     def configure_logger(logger):
         # type: (logging.Logger) -> None
-
         """
         Configure given logger to conform with Gluetool's idea of logging. The logger is set to
         ``VERBOSE`` level, shared stderr handler is added, and Sentry integration status is
@@ -935,7 +938,6 @@ class Logging(object):
         """
 
         logger.propagate = False
-        logger.sentry_submit_warning = Logging.sentry_submit_warning  # type: ignore  # `sentry_submit_warning` created
 
         # logger actually emits everything, handlers do filtering
         logger.setLevel(VERBOSE)
@@ -945,7 +947,7 @@ class Logging(object):
 
         # Extra handling for Jaeger logger:
         # - replace it with a context adapter to keep track of what's being done by Jaeger code,
-        # - and patch its `info` with `debug` - Jaeger is logging things with INFO severity, which spoils
+        # - patch its `info` with `debug` - Jaeger is logging things with INFO severity, which spoils
         #   our output, DEBUG is perfectly fine for us.
         jaeger_logger = logging.getLogger('jaeger_tracing')
 
@@ -1041,14 +1043,13 @@ class Logging(object):
 
     # pylint: disable=too-many-arguments,line-too-long
     @staticmethod
-    def create_logger(level=DEFAULT_LOG_LEVEL,  # type: int
-                      debug_file=None,  # type: Optional[str]
-                      verbose_file=None,  # type: Optional[str]
-                      json_file=None,  # type: Optional[str]
-                      sentry=None,  # type: Optional[gluetool.sentry.Sentry]
-                      sentry_submit_warning=None,  # type: Optional[Callable[..., None]]
-                      show_traceback=False  # type: bool
-                     ):  # noqa
+    def setup_logger(level=DEFAULT_LOG_LEVEL,  # type: int
+                     debug_file=None,  # type: Optional[str]
+                     verbose_file=None,  # type: Optional[str]
+                     json_file=None,  # type: Optional[str]
+                     sentry=None,  # type: Optional[gluetool.sentry.Sentry]
+                     show_traceback=False  # type: bool
+                    ):  # noqa
         # type: (...) -> ContextAdapter
 
         """
@@ -1072,19 +1073,16 @@ class Logging(object):
             e.g. :py:data:`logging.DEBUG` or :py:data:`logging.ERROR`.
         :param bool sentry: if set, logger will be augmented to send every log message to the Sentry
             server.
-        :param callable sentry_submit_warning: if set, it is used by ``warning`` methods of derived
-            loggers to submit warning to the Sentry server, if asked by a caller to do so.
         :param bool show_traceback: if set, exception tracebacks would be sent to ``stderr`` handler
             as well as to the debug file.
-        :rtype: logging.Logger
-        :returns: a :py:class:`logging.Logger` instance, set up for logging.
+        :rtype: ContextAdapter
+        :returns: a :py:class:`ContextAdapter` instance, set up for logging.
         """
 
         level = level or logging.INFO
 
         # store for later use by configure_logger & co.
         Logging.sentry = sentry
-        Logging.sentry_submit_warning = sentry_submit_warning
 
         if Logging.logger is None:
             # we're doing the very first setup of logging handlers, therefore create new stderr handler,
@@ -1121,6 +1119,15 @@ class Logging(object):
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
 
+        logger.debug('logger setup: level={}, debug file={}, verbose file={}, json file={}, sentry={}, show traceback={}'.format(
+            level,
+            debug_file,
+            verbose_file,
+            json_file,
+            'yes' if sentry else 'no',
+            show_traceback
+        ))
+
         # Enable Sentry
         Logging.enable_logger_sentry(logger)
 
@@ -1134,11 +1141,6 @@ class Logging(object):
         map(Logging.enable_debug_file, Logging.OUR_LOGGERS)
         map(Logging.enable_verbose_file, Logging.OUR_LOGGERS)
         map(Logging.enable_json_file, Logging.OUR_LOGGERS)
-
-        logger.debug("logger set up: level={}, debug file={}, verbose file={}, json file={}".format(level,
-                                                                                                    debug_file,
-                                                                                                    verbose_file,
-                                                                                                    json_file))
 
         return logger
 

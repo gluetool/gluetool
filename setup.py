@@ -40,6 +40,7 @@ if __name__ == '__main__':
               'Jinja2==2.10',
               'lxml==4.2.4',
               'mock==3.0.5',
+              'mypy-extensions==0.4.1',
               'packaging==17.1',
               'raven==6.9.0',
               'requests==2.19.1',
