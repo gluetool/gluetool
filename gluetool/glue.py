@@ -1423,6 +1423,24 @@ class CallbackModule(mock.MagicMock):  # type: ignore  # MagicMock has type Any,
 
         self._callback(self.glue, *self._args, **self._kwargs)
 
+    def sanity(self):
+        # type: () -> None
+
+        # pylint: disable-msg=no-self-use
+        return None
+
+    def destroy(self, failure=None):
+        # type: (Optional[Failure]) -> None
+
+        # pylint: disable-msg=no-self-use,unused-argument
+        return None
+
+    def check_required_options(self):
+        # type: () -> None
+
+        # pylint: disable-msg=no-self-use
+        return None
+
 
 class Module(Configurable):
     """

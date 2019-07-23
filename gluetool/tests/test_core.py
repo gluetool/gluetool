@@ -6,6 +6,7 @@ import pytest
 import gluetool
 
 from . import NonLoadingGlue
+from mock import MagicMock
 
 
 def test_check_for_commands():
@@ -188,3 +189,22 @@ def test_module_instantiate():
     assert not mod._config
 
     assert mod.data_path is None  # There's no data path for our "Dummy module"
+
+
+def test_callback_module_instantiate():
+    """
+    Try to instantiate a callback module, and check some of its properties.
+    """
+
+    glue = NonLoadingGlue()
+
+    name = 'module'
+    callback = MagicMock()
+
+    mod = gluetool.glue.CallbackModule(name, glue, callback)
+
+    assert mod.glue == glue
+    assert mod.name == name
+
+    mod.execute()
+    callback.assert_called_once()
