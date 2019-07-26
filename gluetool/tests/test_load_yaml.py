@@ -3,7 +3,8 @@ import re
 import pytest
 
 from gluetool import GlueError
-from gluetool.utils import load_yaml, format_dict
+from gluetool.log import format_dict
+from gluetool.utils import load_yaml
 
 from . import create_yaml
 

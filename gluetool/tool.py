@@ -440,7 +440,7 @@ class Gluetool(object):
                 return failure, destroy_failure
 
             if failure and isinstance(failure.exception, GlueRetryError):
-                Glue.error(failure.exception)
+                Glue.error(str(failure.exception))
                 continue
 
             return failure, destroy_failure

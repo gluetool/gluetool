@@ -42,7 +42,7 @@ def test_extract_eval_context_info_missing():
 
 
 def test_extract_eval_context_info_unchanged():
-    class DummyModule(gluetool.glue.Configurable):
+    class DummyModule(object):
         name = 'dummy-module'
 
         @property

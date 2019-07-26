@@ -14,7 +14,7 @@ def fixture_enable_logger():
     but we don't have such luxury in the ``gluetool`` unit tests.
     """
 
-    return gluetool.log.Logging.create_logger()
+    return gluetool.log.Logging.setup_logger()
 
 
 @pytest.fixture(name='enable_logger_propagate', scope='session', autouse=True)
@@ -24,7 +24,7 @@ def fixture_enable_logger_propagate():
     not work as it sets up another logger, capturing messages propagated by our "real" loggers.
     """
 
-    gluetool.log.Logging.create_logger()
+    gluetool.log.Logging.setup_logger()
     gluetool.log.Logging.logger.propagate = True
 
 

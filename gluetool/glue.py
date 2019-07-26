@@ -21,13 +21,14 @@ import pkg_resources
 from .action import Action
 from .color import Colors, switch as switch_colors
 from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, trim_docstring, eval_context_help
-from .log import Logging, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
+from .log import Logging, LoggerMixin, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
 from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn  # noqa
 from typing import Sequence, Tuple, Type, Union, NamedTuple  # noqa
-from .log import LoggingFunctionType, LoggingWarningFunctionType, ExceptionInfoType  # noqa
+from types import TracebackType  # noqa
+from .log import LoggingFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
     import gluetool.color  # noqa
@@ -441,7 +442,7 @@ class PipelineAdapter(ContextAdapter):
         super(PipelineAdapter, self).__init__(logger, {'ctx_pipeline_name': (5, pipeline_name)})
 
 
-class Pipeline(object):
+class Pipeline(LoggerMixin, object):
     """
     Pipeline of ``gluetool`` modules. Defined by its steps, takes care of registering their shared functions,
     running modules and destroying the pipeline.
@@ -470,18 +471,12 @@ class Pipeline(object):
     :ivar Module current_module: if set, it is the module which is currently being executed.
     """
 
-    verbose = cast(LoggingFunctionType, lambda s: None)
-    debug = cast(LoggingFunctionType, lambda s: None)
-    info = cast(LoggingFunctionType, lambda s: None)
-    warn = cast(LoggingWarningFunctionType, lambda s: None)
-    error = cast(LoggingFunctionType, lambda s: None)
-    exception = cast(LoggingFunctionType, lambda s: None)
+    def __init__(self, glue, steps, logger=None):
+        # type: (Glue, PipelineStepsType, Optional[ContextAdapter]) -> None
 
-    def __init__(self, glue, steps):
-        # type: (Glue, PipelineStepsType) -> None
+        logger = logger or glue.logger
 
-        self.logger = glue.logger
-        self.logger.connect(self)
+        super(Pipeline, self).__init__(logger)
 
         self.glue = glue
         self.steps = steps
@@ -691,7 +686,7 @@ class Pipeline(object):
             with Action(
                 'executing module',
                 parent=self.action,
-                logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
+                logger=module.logger,
                 tags={
                     'unique-name': module.unique_name
                 }
@@ -740,7 +735,7 @@ class Pipeline(object):
             with Action(
                 'destroying module',
                 parent=self.action,
-                logger=module.logger,  # type: ignore  # Cannot determine type of 'logger'
+                logger=module.logger,
                 tags={
                     'unique-name': module.unique_name
                 }
@@ -816,10 +811,7 @@ class NamedPipeline(Pipeline):
     def __init__(self, glue, name, steps):
         # type: (Glue, str, PipelineStepsType) -> None
 
-        super(NamedPipeline, self).__init__(glue, steps)
-
-        self.logger = PipelineAdapter(glue.logger, name)
-        self.logger.connect(self)
+        super(NamedPipeline, self).__init__(glue, steps, logger=PipelineAdapter(glue.logger, name))
 
         self.name = name
 
@@ -846,7 +838,7 @@ class ArgumentParser(argparse.ArgumentParser):
         raise GlueError('Parsing command-line options failed: {}'.format(message))
 
 
-class Configurable(object):
+class Configurable(LoggerMixin, object):
     """
     Base class of two main ``gluetool`` classes - :py:class:`gluetool.glue.Glue` and :py:class:`gluetool.glue.Module`.
     Gives them the ability to use `options`, settable from configuration files and/or command-line arguments.
@@ -855,19 +847,6 @@ class Configurable(object):
       are stored here, regardless of them being set on command-line or by the
       configuration file.
     """
-
-    # Logging type stubs
-    # These methods are added dynamically, therefore without intruducing them to mypy, every use of `self.debug`
-    # would cause an error when checking types. We cannot simply set them to `None`, that makes pylint go crazy
-    # because `None` is apparently not callable, and we're calling `self.debug` often :) So, we use dummy lambdas
-    # for initialization, to make pylint happy, but we wrap them by `cast` to proper types to make mypy happy
-    # as well :)
-    verbose = cast(LoggingFunctionType, lambda s: None)
-    debug = cast(LoggingFunctionType, lambda s: None)
-    info = cast(LoggingFunctionType, lambda s: None)
-    warn = cast(LoggingWarningFunctionType, lambda s: None)
-    error = cast(LoggingFunctionType, lambda s: None)
-    exception = cast(LoggingFunctionType, lambda s: None)
 
     options = {}  # type: Union[Dict[Any, Any], List[Any]]
     """
@@ -988,10 +967,10 @@ class Configurable(object):
                     group_name, group_options = group
                     callback(group_options, group_name=group_name)
 
-    def __init__(self):
-        # type: () -> None
+    def __init__(self, logger):
+        # type: (ContextAdapter) -> None
 
-        super(Configurable, self).__init__()
+        super(Configurable, self).__init__(logger)
 
         # Initialize configuration store
         self._config = {}  # type: Dict[str, Any]
@@ -1459,14 +1438,6 @@ class Module(Configurable):
         shared functions, when one calls another, implementing the same operation.
     """
 
-    # logging type stubs
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
-
     description = None  # type: str
     """Short module description, displayed in ``gluetool``'s module listing."""
 
@@ -1489,16 +1460,12 @@ class Module(Configurable):
     def __init__(self, glue, name):
         # type: (Glue, str) -> None
 
-        super(Module, self).__init__()
-
         # we need to save the unique name in case there are more aliases available
         self.unique_name = name
 
-        self.glue = glue
+        super(Module, self).__init__(ModuleAdapter(glue.logger, self))
 
-        # initialize logging helpers
-        self.logger = ModuleAdapter(glue.logger, self)
-        self.logger.connect(self)
+        self.glue = glue
 
         # initialize data path if exists, else it will be None
         self.data_path = None
@@ -1722,13 +1689,6 @@ class Glue(Configurable):
         Some functionality may need it to gain access to bits like its command-name.
     :param gluetool.sentry.Sentry sentry: If set, it provides interface to Sentry.
     """
-    # logging type stubs
-    verbose = None  # type: LoggingFunctionType
-    debug = None  # type: LoggingFunctionType
-    info = None  # type: LoggingFunctionType
-    warn = None  # type: LoggingWarningFunctionType
-    error = None  # type: LoggingFunctionType
-    exception = None  # type: LoggingFunctionType
 
     name = 'gluetool core'
 
@@ -1918,11 +1878,11 @@ class Glue(Configurable):
         """
 
     # pylint: disable=method-hidden
-    def sentry_submit_warning(self, *args, **kwargs):
+    def sentry_submit_message(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
 
         """
-        Submits warnings to the Sentry server. Does nothing by default, unless this instance
+        Submits message to the Sentry server. Does nothing by default, unless this instance
         is initialized with a :py:class:`gluetool.sentry.Sentry` instance which actually does
         the job.
 
@@ -2403,14 +2363,11 @@ class Glue(Configurable):
 
         if sentry is not None:
             self.sentry_submit_exception = sentry.submit_exception  # type: ignore
-            self.sentry_submit_warning = sentry.submit_warning  # type: ignore
+            self.sentry_submit_message = sentry.submit_message  # type: ignore
 
-        logger = Logging.create_logger(sentry=sentry, sentry_submit_warning=self.sentry_submit_warning)
+        Logging.setup_logger(sentry=sentry)
 
-        self.logger = ContextAdapter(logger)
-        self.logger.connect(self)
-
-        super(Glue, self).__init__()
+        super(Glue, self).__init__(Logging.get_logger())
 
         self.tool = tool
 
@@ -2488,17 +2445,14 @@ class Glue(Configurable):
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
 
-        show_traceback = normalize_bool_option(self.option('show-traceback'))
-
-        logger = Logging.create_logger(level=level,
-                                       debug_file=debug_file,
-                                       verbose_file=verbose_file,
-                                       json_file=json_file,
-                                       sentry=self._sentry,
-                                       show_traceback=show_traceback)
-
-        self.logger = ContextAdapter(logger)
-        self.logger.connect(self)
+        Logging.setup_logger(
+            level=level,
+            debug_file=debug_file,
+            verbose_file=verbose_file,
+            json_file=json_file,
+            sentry=self._sentry,
+            show_traceback=normalize_bool_option(self.option('show-traceback'))
+        )
 
         if level == logging.DEBUG and not verbose_file:
             # pylint: disable=line-too-long
