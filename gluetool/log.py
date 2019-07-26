@@ -628,6 +628,11 @@ class LoggerMixin(object):
     def __init__(self, logger):
         # type: (ContextAdapter) -> None
 
+        self._reconnect_logger(logger)
+
+    def _reconnect_logger(self, logger):
+        # type: (ContextAdapter) -> None
+
         self.logger = logger
 
         self.log = logger.log
