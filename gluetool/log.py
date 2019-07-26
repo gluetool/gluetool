@@ -563,20 +563,23 @@ class ContextAdapter(logging.LoggerAdapter):
         self.log(logging.DEBUG, placeholder_message, exc_info=exc_info, extra=extra, sentry=sentry)
         self.log(VERBOSE, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
+    # Disabling type checking of logging methods' signatures - they differ from supertype's signatures
+    # but that is on purpose.
+
     # pylint: disable=arguments-differ
-    def debug(self, msg, exc_info=None, extra=None, sentry=False):  # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+    def debug(self, msg, exc_info=None, extra=None, sentry=False):  # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
         self.log(logging.DEBUG, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
     # pylint: disable=arguments-differ
-    def info(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+    def info(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
         self.log(logging.INFO, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
     # pylint: disable=arguments-differ
-    def warning(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+    def warning(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
         self.log(logging.WARNING, msg, exc_info=exc_info, extra=extra, sentry=sentry)
@@ -584,13 +587,13 @@ class ContextAdapter(logging.LoggerAdapter):
     warn = warning
 
     # pylint: disable=arguments-differ
-    def error(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+    def error(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
         self.log(logging.ERROR, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
     # pylint: disable=arguments-differ
-    def exception(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore  # Signature of "debug" incompatible with supertype "LoggerAdapter"
+    def exception(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
         self.log(logging.ERROR, msg, exc_info=exc_info, extra=extra, sentry=sentry)
