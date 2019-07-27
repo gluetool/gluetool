@@ -625,8 +625,10 @@ class LoggerMixin(object):
 
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, logger):
-        # type: (ContextAdapter) -> None
+    def __init__(self, logger, *args, **kwargs):
+        # type: (ContextAdapter, *Any, **Any) -> None
+
+        super(LoggerMixin, self).__init__(*args, **kwargs)  # type: ignore  # Too many arguments - it's fine...
 
         self._reconnect_logger(logger)
 
