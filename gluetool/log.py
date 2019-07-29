@@ -98,15 +98,13 @@ _TRACEBACK_TEMPLATE = """
 
 At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
 
-    {{ stack[-1][3] }}
-
 {{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception }}
 
 {% for filepath, lineno, fn, text, frame in stack %}
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
-    Local variables:{% for name in frame.f_locals | iterkeys | sort %}
+    Local variables:{% for name in iterkeys(frame.f_locals) | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
 {% endfor %}

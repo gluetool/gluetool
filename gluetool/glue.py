@@ -13,7 +13,7 @@ import warnings
 
 from functools import partial
 
-from six import iterkeys, iteritems, ensure_str
+from six import iterkeys, itervalues, iteritems, ensure_str
 from six.moves import configparser
 
 import jinja2
@@ -62,9 +62,9 @@ DEFAULT_MODULE_PATHS = [
 # Install workarounds from Six - this makes templates compatible with both Python 2 and 3 when it comes
 # to iterating over dictionaries.
 jinja2.defaults.DEFAULT_NAMESPACE.update({
-    'iteritems': six.iteritems,
-    'iterkeys': six.iterkeys,
-    'itervalues': six.itervalues
+    'iteritems': iteritems,
+    'iterkeys': iterkeys,
+    'itervalues': itervalues
 })
 
 
