@@ -93,6 +93,5 @@ def test_sanity():
         # frame's list of locals, leading to a self-reference in expected output.
 
         # match lines one by one, using expected as a regex pattern
-        print(gluetool.log.LoggingFormatter._format_exception_chain(excinfo))
         for l1, l2 in zip(EXPECTED.split('\n'), gluetool.log.LoggingFormatter._format_exception_chain(excinfo).split('\n')):
             assert re.match('^' + l1 + '$', l2)
