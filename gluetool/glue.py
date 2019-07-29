@@ -27,7 +27,7 @@ from .log import Logging, LoggerMixin, ContextAdapter, ModuleAdapter, log_dict, 
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order,
-from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn, Text  # noqa
+from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn  # noqa
 from typing import Sequence, Tuple, Type, Union, NamedTuple  # noqa
 from types import TracebackType  # noqa
 from .log import LoggingFunctionType, ExceptionInfoType  # noqa

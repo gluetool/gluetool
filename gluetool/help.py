@@ -26,14 +26,14 @@ import sphinx.locale
 import sphinx.util.nodes
 
 import six
-from six import PY2, ensure_text, ensure_str, iteritems
+from six import PY2, ensure_str, iteritems
 
 from .color import Colors
 from .log import Logging
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Text, Tuple, Union  # noqa
+from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Tuple, Union  # noqa
 
 if TYPE_CHECKING:
     import gluetool  # noqa
@@ -63,19 +63,19 @@ sphinx.writers.text.MAXWIDTH = CROP_WIDTH
 # Semantic colorizers
 # pylint: disable=invalid-name
 def C_FUNCNAME(text):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_ARGNAME(text):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_LITERAL(text):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     return Colors.style(text, fg='cyan', reset=True)
 
@@ -133,9 +133,9 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
         super(LineWrapRawTextHelpFormatter, self).__init__(*args, **kwargs)
 
     def _split_lines(self, text, width):  # # type: ignore  # incompatible with super type because of unicode
-        # type: (Text, int) -> List[Text]
+        # type: (str, int) -> List[str]
 
-        text = ensure_text(self._whitespace_matcher.sub(' ', ensure_str(text)).strip())
+        text = ensure_str(self._whitespace_matcher.sub(' ', ensure_str(text)).strip())
 
         return textwrap.wrap(text, width)
 
@@ -146,7 +146,7 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
 #
 
 def py_default_role(role, rawtext, text, lineno, inliner, options=None, content=None):
-    # type: (Any, Text, Text, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
 
     # pylint: disable=unused-argument,too-many-arguments
     """
@@ -162,7 +162,7 @@ for python_role in ('py:class', 'py:meth', 'py:mod'):
 
 
 def doc_role_handler(role, rawtext, text, lineno, inliner, options=None, context=None):
-    # type: (Any, Text, Text, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
+    # type: (Any, str, str, int, Any, Optional[Any], Optional[Any]) -> Tuple[Any, Any]
 
     # pylint: disable=unused-argument,too-many-arguments
     """
@@ -205,7 +205,7 @@ class DummyTextBuilder:
 
 
 def rst_to_text(text):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     """
     Render given text, written with RST, as plain text.
@@ -215,11 +215,11 @@ def rst_to_text(text):
     :returns: plain text representation of ``text``.
     """
 
-    return ensure_text(docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
+    return ensure_str(docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
 
 
 def trim_docstring(docstring):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     """
     Quoting `PEP 257 <https://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation>`:
@@ -267,7 +267,7 @@ def trim_docstring(docstring):
 
 
 def docstring_to_help(docstring, width=None, line_prefix='    '):
-    # type: (Text, Optional[int], Text) -> Text
+    # type: (str, Optional[int], str) -> str
 
     """
     Given docstring, process and render it as a plain text. This conversion function
@@ -290,7 +290,7 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
     # For each line - which is actually a paragraph, given the text comes from RST - wrap it
     # to fit inside given line length (a bit shorter, there's a prefix for each line!).
-    wrapped_lines = []  # type: List[Text]
+    wrapped_lines = []  # type: List[str]
     wrap = partial(textwrap.wrap, width=width - len(line_prefix), initial_indent=line_prefix,
                    subsequent_indent=line_prefix)
 
@@ -305,7 +305,7 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
 
 
 def option_help(txt):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     """
     Given option help text, format it to be more suitable for command-line help.
@@ -326,7 +326,7 @@ def option_help(txt):
 
 
 def function_help(func, name=None):
-    # type: (Callable[..., Any], Optional[str]) -> Tuple[Text, Text]
+    # type: (Callable[..., Any], Optional[str]) -> Tuple[str, str]
 
     """
     Uses function's signature and docstring to generate a plain text help describing
@@ -349,7 +349,7 @@ def function_help(func, name=None):
 
     no_default = object()
 
-    defaults = []  # type: List[Union[Text, object]]
+    defaults = []  # type: List[Union[str, object]]
 
     # arguments that don't have default value are assigned our special value to let us tell the difference
     # between "no default" and "None is the default"
@@ -381,7 +381,7 @@ def function_help(func, name=None):
 
 
 def functions_help(functions):
-    # type: (List[Tuple[str, Callable[..., Any]]]) -> Text
+    # type: (List[Tuple[str, Callable[..., Any]]]) -> str
 
     """
     Generate help for a set of functions.
@@ -402,7 +402,7 @@ def functions_help(functions):
 
 
 def extract_eval_context_info(source, logger=None):
-    # type: (gluetool.glue.Configurable, Optional[gluetool.log.ContextAdapter]) -> Dict[Text, Text]
+    # type: (gluetool.glue.Configurable, Optional[gluetool.log.ContextAdapter]) -> Dict[str, str]
 
     """
     Extract information of evaluation context content from the ``source`` - a module
@@ -415,7 +415,7 @@ def extract_eval_context_info(source, logger=None):
     returns an empty dictionary.
 
     :param gluetool.glue.Configurable source: object to extract information from.
-    :rtype: dict(Text, Text)
+    :rtype: dict(str, str)
     """
 
     logger = logger or Logging.get_logger()
@@ -501,7 +501,7 @@ def extract_eval_context_info(source, logger=None):
 
 
 def eval_context_help(source):
-    # type: (gluetool.glue.Configurable) -> Text
+    # type: (gluetool.glue.Configurable) -> str
 
     """
     Generate and format help for an evaluation context of a module. Looks for context content,
