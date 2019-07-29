@@ -112,7 +112,7 @@ def test_exit_code_error(popen, log):
 
     popen.return_value.poll.return_value = 1
 
-    command = [u'/bin/foo']
+    command = ['/bin/foo']
 
     with pytest.raises(gluetool.GlueCommandError, match=r"^Command '\['/bin/foo'\]' failed with exit code 1$") \
             as excinfo:

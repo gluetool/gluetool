@@ -51,6 +51,8 @@ import os
 import threading
 import time
 
+from six import iteritems
+
 from .log import Logging
 from .result import Result
 
@@ -348,5 +350,5 @@ class Action(object):
     def set_tags(self, tags):
         # type: (Dict[str, Any]) -> None
 
-        for name, value in tags.iteritems():
+        for name, value in iteritems(tags):
             self.set_tag(name, value)

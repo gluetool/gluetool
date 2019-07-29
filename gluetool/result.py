@@ -49,14 +49,16 @@ class Result(Generic[T, E]):
         # type: (Any) -> bool
         # pylint: disable=protected-access
 
-        return (self.__class__ == other.__class__ and
-                self.is_ok == cast(Result, other).is_ok and
-                self._value == other._value)
+        return bool(
+            self.__class__ == other.__class__ and
+            self.is_ok == cast(Result[T, E], other).is_ok and
+            self._value == other._value
+        )
 
     def __ne__(self, other):
         # type: (Any) -> bool
 
-        return not self == other
+        return not bool(self == other)
 
     def __hash__(self):
         # type: () -> int

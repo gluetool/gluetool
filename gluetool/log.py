@@ -45,13 +45,13 @@ import traceback
 
 import jinja2
 import tabulate
-from six import PY2, ensure_binary, ensure_text, ensure_str
+from six import PY2, ensure_str, ensure_binary, iteritems, iterkeys
 
 from .color import Colors
 
 # Type annotations
-# pylint: disable=unused-import, wrong-import-order, line-too-long
-from typing import TYPE_CHECKING, Any, AnyStr, Callable, Dict, Iterable, List, MutableMapping, Optional, Text, Tuple, Type, Union  # noqa
+# pylint: disable=unused-import,wrong-import-order,line-too-long
+from typing import TYPE_CHECKING, Any, AnyStr, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
 from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
 from mypy_extensions import Arg, DefaultArg, NamedArg, DefaultNamedArg, VarArg, KwArg  # noqa
@@ -98,13 +98,15 @@ _TRACEBACK_TEMPLATE = """
 
 At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
 
+    {{ stack[-1][3] }}
+
 {{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception }}
 
 {% for filepath, lineno, fn, text, frame in stack %}
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
-    Local variables:{% for name in iterkeys(frame.f_locals) | sort %}
+    Local variables:{% for name in frame.f_locals | iterkeys | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
 {% endfor %}
@@ -191,14 +193,14 @@ class StreamToLogger(object):
 
         self.log_fn = log_fn
 
-        self.linebuf = []  # type: List[Text]
+        self.linebuf = []  # type: List[str]
 
     def write(self, buf):
-        # type: (Text) -> None
+        # type: (str) -> None
 
         for c in buf:
             if ord(c) == ord('\n'):
-                self.log_fn(''.join(self.linebuf))
+                self.log_fn(ensure_str(''.join(self.linebuf)))
                 self.linebuf = []
                 continue
 
@@ -210,7 +212,7 @@ class StreamToLogger(object):
 
 @contextlib.contextmanager  # type: ignore  # complains about incompatible type but I see no issue :/
 def print_wrapper(log_fn=None, label='print wrapper'):
-    # type: (Optional[LoggingFunctionType], Optional[Text]) -> Iterable[None]
+    # type: (Optional[LoggingFunctionType], Optional[str]) -> Iterable[None]
 
     """
     While active, replaces :py:data:`sys.stdout` and :py:data:`sys.stderr` streams with
@@ -241,19 +243,19 @@ def print_wrapper(log_fn=None, label='print wrapper'):
 
 
 def format_blob(blob):
-    # type: (AnyStr) -> Text
+    # type: (AnyStr) -> str
 
     """
     Format a blob of text for printing. Wraps the text with boundaries to mark its borders.
     """
 
-    text_blob = ensure_text(blob)
+    text_blob = ensure_str(blob)
 
     return '{}\n{}\n{}'.format(BLOB_HEADER, text_blob, BLOB_FOOTER)
 
 
 def format_dict(dictionary):
-    # type: (Any) -> Text
+    # type: (Any) -> str
 
     """
     Format a Python data structure for printing. Uses :py:func:`json.dumps` formatting
@@ -263,7 +265,7 @@ def format_dict(dictionary):
     # Use custom "default" handler, to at least encode obj's repr() output when
     # json encoder does not know how to encode such class
     def default(obj):
-        # type: (Any) -> Text
+        # type: (Any) -> str
 
         return repr(obj)
 
@@ -283,11 +285,11 @@ def format_table(table, **kwargs):
     :returns: formatted table.
     """
 
-    return cast(str, tabulate.tabulate(table, **kwargs))
+    return tabulate.tabulate(table, **kwargs)
 
 
 def format_xml(element):
-    # type: (bs4.BeautifulSoup) -> Text
+    # type: (bs4.BeautifulSoup) -> str
 
     """
     Format an XML element, e.g. Beaker job description, for printing.
@@ -295,7 +297,7 @@ def format_xml(element):
     :param element: XML element to format.
     """
 
-    prettyfied = element.prettify()  # type: Text
+    prettyfied = element.prettify()  # type: str
 
     return prettyfied
 
@@ -546,7 +548,7 @@ class ContextAdapter(logging.LoggerAdapter):
         # DEBUG log, and use this reference to find corresponding VERBOSE record.
         # Adding time.time() as a salt - tag is based on message hash, it may be
         # logged multiple times, leading to the same tag.
-        tag = hashlib.md5('{}: {}'.format(time.time(), msg)).hexdigest()
+        tag = hashlib.md5(ensure_binary('{}: {}'.format(time.time(), msg))).hexdigest()
 
         # add verbose tag as a context, with very high priority
         extra = extra or {}
@@ -601,7 +603,7 @@ class ContextAdapter(logging.LoggerAdapter):
 
         self.log(logging.WARNING, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
-    warn = warning
+    warn = warning  # type: ignore
 
     # pylint: disable=arguments-differ
     def error(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
@@ -627,7 +629,7 @@ class ModuleAdapter(ContextAdapter):
     # pylint: disable=too-few-public-methods
 
     def __init__(self, logger, module):
-        # type: (ContextAdapter, gluetool.Module) -> None
+        # type: (ContextAdapter, gluetool.glue.Module) -> None
 
         super(ModuleAdapter, self).__init__(logger, {'ctx_module_name': (10, module.unique_name)})
 
@@ -722,7 +724,7 @@ class LoggingFormatter(logging.Formatter):
 
     @staticmethod
     def _format_exception_chain(exc_info):
-        # type: (Any) -> Text
+        # type: (Any) -> str
         """
         Format exception chain. Start with the one we're given, and follow its `caused_by` property
         until we ran out of exceptions to format.
@@ -730,15 +732,17 @@ class LoggingFormatter(logging.Formatter):
 
         tmpl = jinja2.Template(_TRACEBACK_TEMPLATE)
 
-        output = [u'']
+        output = ['']
 
         # Format one exception and its traceback
         def _add_block(label, exc, trace):
-            # type: (Text, Exception, Any) -> None
+            # type: (str, Exception, Any) -> None
 
             stack = _extract_stack(trace)
 
-            output.append(tmpl.render(label=label, exception=exc, stack=stack))
+            output.append(
+                ensure_str(tmpl.render(label=label, exception=exc, stack=stack, iterkeys=iterkeys))
+            )
 
         # This is the most recent exception, we start with this one - it's often the one most visible,
         # exceptions that caused it are usualy hidden from user's sight.
@@ -770,7 +774,7 @@ class LoggingFormatter(logging.Formatter):
             'stamp': self.formatTime(record, datefmt='%H:%M:%S'),
             'level': LoggingFormatter._level_tags[record.levelno],
             'msg': record.getMessage()
-        }  # type: Dict[str, Text]
+        }  # type: Dict[str, str]
 
         handler_logs_traceback = self.log_tracebacks is True \
             or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))
@@ -780,7 +784,7 @@ class LoggingFormatter(logging.Formatter):
 
             # \n helps formatting - logging would add formatted chain right after the leading message
             # without starting new line. We must do it, to make report more readable.
-            values['exc_text'] = u'\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
+            values['exc_text'] = '\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
 
         # Handle context properties of the record
         def _add_context(context_name, context_value):
@@ -870,7 +874,7 @@ class JSONLoggingFormatter(logging.Formatter):
                             local_var_name: {
                                 'type': type(local_var_value),
                                 'value': local_var_value
-                            } for local_var_name, local_var_value in frame.f_locals.iteritems()
+                            } for local_var_name, local_var_value in iteritems(frame.f_locals)
                         }
                     }
                     for filename, lineno, fnname, text, frame in stack
@@ -880,7 +884,7 @@ class JSONLoggingFormatter(logging.Formatter):
         _add_cause(exc_info[1], exc_info[2])
 
         while exc_info[1] and getattr(exc_info[1], 'caused_by', None) is not None:
-            exc_info = exc_info[1].caused_by
+            exc_info = exc_info[1].caused_by  # type: ignore  # it *does* have `caused_by` attribute
 
             _add_cause(exc_info[1], exc_info[2])
 

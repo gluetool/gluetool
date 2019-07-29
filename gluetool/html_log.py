@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 import argparse
 import io
 import json
@@ -9,12 +11,13 @@ import sys
 
 import jinja2
 from jinja2.utils import Markup
+from six import PY2, ensure_str
 
-from gluetool.log import format_dict
+from .log import format_dict
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Dict, Iterable, Optional, Union  # noqa
+from typing import cast, Any, Dict, IO, Iterable, Optional, TextIO, Union  # noqa
 
 
 NOT_WHITESPACE = re.compile(r'[^\s]')
@@ -229,7 +232,7 @@ def decode_stacked(document, pos=0, decoder=json.JSONDecoder()):
 
 
 def _code_filter(ctx, value, syntax, apply_format=False, line_numbers=False, line_start=None, line_highlight=None):
-    # type: (Any, unicode, str, bool, bool, Optional[int], Optional[int]) -> Union[str, Markup]
+    # type: (Any, str, str, bool, bool, Optional[int], Optional[int]) -> Union[str, Markup]
     # pylint: disable=too-many-arguments
     """
     Generic filter to highlight the code. Emits tags and content to employ Prism to do the highlighting.
@@ -289,7 +292,7 @@ def _snippet_filter(ctx, filepath, lineno, syntax, window=10):
 
     snippet = lines[max(line_index - window, 0):min(line_index + window, len(lines))]
 
-    return _code_filter(ctx, u''.join(snippet), syntax,
+    return _code_filter(ctx, ''.join(snippet), syntax,
                         line_numbers=True,
                         line_start=max(lineno - window, 1),
                         line_highlight=lineno)
@@ -418,7 +421,7 @@ def main():
 
     else:
         if not os.path.exists(args.input):
-            print 'No such file "{}"'.format(args.input)
+            print('No such file "{}"'.format(args.input))
             sys.exit(1)
 
         with io.open(args.input, 'r') as f:
@@ -429,12 +432,16 @@ def main():
         output_stream = sys.stdout
 
     else:
-        output_stream = io.open(args.output, 'w')
+        if PY2:
+            output_stream = cast(IO[str], io.open(args.output, 'w'))
+
+        else:
+            output_stream = cast(TextIO, io.open(args.output, 'w'))
 
     jinja_env = jinja2.Environment(extensions=['jinja2.ext.loopcontrols'])
     template = jinja_env.from_string(TEMPLATE)
 
-    output_stream.write(cast(str, template.render(ARGS=args, LOG=entries)))
+    output_stream.write(ensure_str(template.render(ARGS=args, LOG=entries)))
     output_stream.flush()
 
 

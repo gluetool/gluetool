@@ -12,7 +12,7 @@ import signal
 import sys
 import traceback
 
-from six import ensure_text, iteritems
+from six import ensure_str, iteritems, iterkeys
 
 import tabulate
 
@@ -20,16 +20,14 @@ import gluetool
 import gluetool.action
 import gluetool.sentry
 
-from gluetool import GlueError, GlueRetryError, Failure
-from gluetool.help import extract_eval_context_info, docstring_to_help
-from gluetool.glue import PipelineStepModule
-from gluetool.log import log_dict
-from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
-    normalize_multistring_option
+from .glue import GlueError, GlueRetryError, Failure, PipelineStepModule
+from .help import extract_eval_context_info, docstring_to_help
+from .log import log_dict
+from .utils import format_command_line, cached_property, normalize_path, render_template, normalize_multistring_option
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Callable, List, Optional, NoReturn, Text, Union  # noqa
+from typing import cast, Any, Callable, List, Optional, NoReturn, Union  # noqa
 from types import FrameType  # noqa
 from gluetool.glue import PipelineReturnType  # noqa
 
@@ -74,21 +72,21 @@ class Gluetool(object):
         # pylint: disable=invalid-name
         self.Glue = None  # type: Optional[gluetool.glue.Glue]
 
-        self.argv = None  # type: Optional[List[Text]]
+        self.argv = None  # type: Optional[List[str]]
         self.pipeline_desc = None  # type: Optional[List[gluetool.glue.PipelineStepModule]]
 
     @cached_property
     def _version(self):
-        # type: () -> Text
+        # type: () -> str
 
         # pylint: disable=no-self-use
         from .version import __version__
 
-        return ensure_text(__version__.strip())
+        return ensure_str(__version__.strip())
 
     @cached_property
     def _command_name(self):
-        # type: () -> Text
+        # type: () -> str
 
         # pylint: disable=no-self-use
         return 'gluetool'
@@ -140,7 +138,7 @@ class Gluetool(object):
         # type: (List[Any], List[gluetool.glue.PipelineStepModule]) -> None
 
         cmdline = [
-            [ensure_text(sys.argv[0])] + argv
+            [ensure_str(sys.argv[0])] + argv
         ]
 
         for step in pipeline_desc:
@@ -285,7 +283,7 @@ class Gluetool(object):
         sigmap = {getattr(signal, name): name for name in [name for name in dir(signal) if name.startswith('SIG')]}
 
         def _signal_handler(signum, frame, handler=None, msg=None):
-            # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[Text]) -> Any
+            # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[str]) -> Any
 
             msg = msg or 'Signal {} received'.format(sigmap[signum])
 
@@ -308,7 +306,7 @@ class Gluetool(object):
         sigusr1_handler = functools.partial(_signal_handler, handler=_sigusr1_handler)
 
         # pylint: disable=invalid-name
-        Glue = self.Glue = gluetool.Glue(tool=self, sentry=self.sentry)
+        Glue = self.Glue = gluetool.glue.Glue(tool=self, sentry=self.sentry)
 
         # Glue is initialized, we can install our logging handlers
         signal.signal(signal.SIGINT, sigint_handler)
@@ -324,7 +322,7 @@ class Gluetool(object):
 
         # store tool's configuration - everything till the start of "pipeline" (the first module)
         self.argv = [
-            ensure_text(arg) for arg in sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
+            ensure_str(arg) for arg in sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
         ]
 
         if Glue.option('pid'):
@@ -346,7 +344,7 @@ class Gluetool(object):
         Glue = self.Glue
         assert Glue is not None
 
-        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), Glue.modules.keys())
+        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), list(iterkeys(Glue.modules)))
         log_dict(Glue.debug, 'pipeline description', self.pipeline_desc)
 
         # list modules
@@ -360,9 +358,9 @@ class Gluetool(object):
             sys.exit(0)
 
         if Glue.option('list-shared'):
-            functions = []  # type: List[List[Text]]
+            functions = []  # type: List[List[str]]
 
-            for mod_name in sorted(Glue.modules.iterkeys()):
+            for mod_name in sorted(iterkeys(Glue.modules)):
                 functions += [
                     [func_name, mod_name] for func_name in Glue.modules[mod_name].klass.shared_functions
                 ]
@@ -392,7 +390,7 @@ class Gluetool(object):
                         name, source.name, docstring_to_help(description, line_prefix='')
                     ])
 
-            for mod_name in sorted(Glue.modules.iterkeys()):
+            for mod_name in sorted(iterkeys(Glue.modules)):
                 _add_variables(Glue.init_module(mod_name))
 
             _add_variables(Glue)
@@ -437,7 +435,7 @@ class Gluetool(object):
         for loop_number in range(retries + 1):
             # Print retry info
             if loop_number:
-                Glue.warn('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
+                Glue.warning('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
 
             # Run the pipeline
             failure, destroy_failure = Glue.run_modules(self.pipeline_desc)
@@ -462,7 +460,7 @@ class Gluetool(object):
         failure, destroy_failure = self.run_pipeline()
 
         if destroy_failure:
-            self._exit_logger.warn('Exception raised when destroying modules, overriding exit status')
+            self._exit_logger.warning('Exception raised when destroying modules, overriding exit status')
 
             self._handle_failure(destroy_failure)
 

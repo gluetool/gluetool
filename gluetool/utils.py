@@ -26,22 +26,23 @@ import requests as original_requests
 
 # Python 2/3 compatibility
 import six
-from six import PY2, ensure_str, ensure_text, iteritems, iterkeys
+from six import PY2, ensure_str, iteritems, iterkeys
 from six.moves import http_client, urllib
 
 # Don't know why pylint reports "Relative import 'ruamel.yaml', should be 'gluetool.ruamel.yaml'" :(
 # pylint: disable=relative-import
 import ruamel.yaml
 
-from gluetool import GlueError, SoftGlueError, GlueCommandError
+from .glue import GlueError, SoftGlueError, GlueCommandError
 from .result import Result
 from .log import Logging, ContextAdapter, PackageAdapter, LoggerMixin, BlobLogger, \
     log_blob, log_dict, print_wrapper
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
-from .log import LoggingFunctionType, LoggingWarningFunctionType  # noqa
+from typing import TYPE_CHECKING, cast  # noqa
+from typing import Any, Callable, Deque, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
+from .log import LoggingFunctionType  # noqa
 
 if TYPE_CHECKING:
     import logging  # noqa
@@ -113,7 +114,7 @@ def dict_update(dst, *args):
 
 
 def normalize_bool_option(option_value):
-    # type: (Union[Text, bool]) -> bool
+    # type: (Union[str, bool]) -> bool
 
     """
     Convert option value to Python's boolean.
@@ -152,8 +153,8 @@ def normalize_bool_option(option_value):
     return False
 
 
-def normalize_multistring_option(option_value, separator=u','):
-    # type: (Union[Text, List[Text]], Optional[Text]) -> List[Text]
+def normalize_multistring_option(option_value, separator=','):
+    # type: (Union[str, List[str]], Optional[str]) -> List[str]
 
     """
     Reduce string, representing comma-separated list of items, or possibly a list of such strings,
@@ -197,7 +198,7 @@ def normalize_multistring_option(option_value, separator=u','):
 
 
 def normalize_shell_option(option_value):
-    # type: (Union[Text, List[Text]]) -> List[Text]
+    # type: (Union[str, List[str]]) -> List[str]
 
     """
     Reduce string, using a shell-like syntax, or possibly a list of such strings,
@@ -230,13 +231,13 @@ def normalize_shell_option(option_value):
 
     # Now split each item using shlex, and merge these lists into a single one.
     return sum([
-        [ensure_text(s) for s in shlex.split(ensure_str(value))]
+        [ensure_str(s) for s in shlex.split(ensure_str(value))]
         for value in values
     ], [])
 
 
 def normalize_path(path):
-    # type: (Text) -> Text
+    # type: (str) -> str
 
     """
     Apply common treatments on a given path:
@@ -249,7 +250,7 @@ def normalize_path(path):
 
 
 def normalize_path_option(option_value, separator=','):
-    # type: (Union[Text, List[Text]], Optional[Text]) -> List[Text]
+    # type: (Union[str, List[str]], Optional[str]) -> List[str]
 
     """
     Reduce many ways how list of paths is specified by user, to a simple list of paths. See
@@ -331,7 +332,7 @@ class WorkerThread(LoggerMixin, threading.Thread):
 
 class StreamReader(object):
     def __init__(self, stream, name=None, block=16):
-        # type: (Any, Optional[Text], Optional[int]) -> None
+        # type: (Any, Optional[str], Optional[int]) -> None
 
         """
         Wrap blocking ``stream`` with a reading thread. The threads read from
@@ -344,8 +345,8 @@ class StreamReader(object):
 
         # List would fine as well, however deque is better optimized for
         # FIFO operations, and it provides the same thread safety.
-        self._queue = collections.deque()  # type: Deque[Union[None, Text]]
-        self._content = []  # type: List[Text]
+        self._queue = collections.deque()  # type: Deque[Union[None, str]]
+        self._content = []  # type: List[str]
 
         def _enqueue():
             # type: () -> None
@@ -371,13 +372,13 @@ class StreamReader(object):
 
     @property
     def name(self):
-        # type: () -> Text
+        # type: () -> str
 
         return self._name
 
     @property
     def content(self):
-        # type: () -> Text
+        # type: () -> str
 
         return ''.join(self._content)
 
@@ -387,10 +388,10 @@ class StreamReader(object):
         self._thread.join()
 
     def read(self):
-        # type: () -> Optional[Text]
+        # type: () -> Optional[str]
 
         try:
-            return self._queue.popleft()
+            return cast(str, self._queue.popleft())
 
         except IndexError:
             return None
@@ -403,7 +404,7 @@ class ProcessOutput(object):
 
     # pylint: disable=too-many-arguments,too-few-public-methods
     def __init__(self, cmd, exit_code, stdout, stderr, kwargs):
-        # type: (List[Text], int, Optional[Text], Optional[Text], Dict[str, Any]) -> None
+        # type: (List[str], int, Optional[str], Optional[str], Dict[str, Any]) -> None
 
         self.cmd = cmd
         self.kwargs = kwargs
@@ -472,26 +473,26 @@ class Command(LoggerMixin, object):
     # pylint: disable=too-few-public-methods
 
     def __init__(self, executable, options=None, logger=None):
-        # type: (List[Text], Optional[List[Text]], Optional[ContextAdapter]) -> None
+        # type: (List[str], Optional[List[str]], Optional[ContextAdapter]) -> None
 
         super(Command, self).__init__(logger or Logging.get_logger())
 
         self.executable = executable
-        self.options = options or []  # type: List[Text]
+        self.options = options or []  # type: List[str]
 
         self.use_shell = False
         self.quote_args = False
 
-        self._command = None  # type: Optional[List[Text]]
+        self._command = None  # type: Optional[List[str]]
         self._popen_kwargs = None  # type: Optional[Dict[str, Any]]
         self._process = None  # type: Optional[subprocess.Popen]
         self._exit_code = None  # type: Optional[int]
 
-        self._stdout = None  # type: Optional[Text]
-        self._stderr = None  # type: Optional[Text]
+        self._stdout = None  # type: Optional[str]
+        self._stderr = None  # type: Optional[str]
 
     def _apply_quotes(self):
-        # type: () -> List[Text]
+        # type: () -> List[str]
 
         """
         Return options to pass to ``Popen``. Applies quotes as necessary.
@@ -516,7 +517,7 @@ class Command(LoggerMixin, object):
         self._stdout, self._stderr = self._process.communicate()
 
     def _communicate_inspect(self, inspect_callback):
-        # type: (Optional[Callable[[Any, Optional[Text], bool], None]]) -> None
+        # type: (Optional[Callable[[Any, Optional[str], bool], None]]) -> None
 
         # Collapse optionals to specific types
         assert self._command is not None
@@ -529,7 +530,7 @@ class Command(LoggerMixin, object):
 
         if inspect_callback is None:
             def stdout_write(stream, data, flush):
-                # type: (Any, Optional[Text], bool) -> None
+                # type: (Any, Optional[str], bool) -> None
 
                 # pylint: disable=unused-argument
 
@@ -615,12 +616,12 @@ class Command(LoggerMixin, object):
         # pylint: disable=too-many-branches
 
         def _check_types(items):
-            # type: (List[Text]) -> None
+            # type: (List[str]) -> None
 
             if not isinstance(items, list):
                 raise GlueError('Only list of strings is accepted')
 
-            if not all((isinstance(s, six.text_type) for s in items)):
+            if not all((isinstance(s, six.string_types) for s in items)):
                 raise GlueError('Only list of strings is accepted, {} found'.format([(s, type(s)) for s in items]))
 
         _check_types(self.executable)
@@ -644,7 +645,7 @@ class Command(LoggerMixin, object):
         self._popen_kwargs = kwargs
 
         def _format_stream(stream):
-            # type: (Any) -> Text
+            # type: (Any) -> str
 
             if stream == subprocess.PIPE:
                 return 'PIPE'
@@ -690,7 +691,7 @@ class Command(LoggerMixin, object):
 
 @deprecated
 def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs):
-    # type: (List[Text], Optional[ContextAdapter], bool, Optional[Callable[..., None]], **Any) -> ProcessOutput
+    # type: (List[str], Optional[ContextAdapter], bool, Optional[Callable[..., None]], **Any) -> ProcessOutput
 
     # pylint: disable=unused-argument
 
@@ -708,13 +709,13 @@ def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs
 
 
 def check_for_commands(cmds):
-    # type: (List[Text]) -> None
+    # type: (List[str]) -> None
 
     """ Checks if all commands in list cmds are valid """
 
     for cmd in cmds:
         try:
-            Command([u'/bin/bash', u'-c', u'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
+            Command(['/bin/bash', '-c', 'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
 
         except GlueError:
             raise GlueError("Command '{}' not found on the system".format(ensure_str(cmd)))
@@ -759,7 +760,7 @@ class cached_property(object):
 
 
 def format_command_line(cmdline):
-    # type: (List[List[Text]]) -> Text
+    # type: (List[List[str]]) -> str
 
     """
     Return formatted command-line.
@@ -770,7 +771,7 @@ def format_command_line(cmdline):
     """
 
     def _format_options(options):
-        # type: (List[Text]) -> Text
+        # type: (List[str]) -> str
 
         # To make code more readable, it's split to multiple lines. First, make sure each option
         # is "str", accepted by `shlex_quote` function.
@@ -782,21 +783,21 @@ def format_command_line(cmdline):
         quoted_options = [six.moves.shlex_quote(opt) for opt in encoded_options]
 
         # Finally, convert quoted options back to "text".
-        decoded_options = [ensure_text(opt) for opt in quoted_options]
+        decoded_options = [ensure_str(opt) for opt in quoted_options]
 
-        return u' '.join(decoded_options)
+        return ' '.join(decoded_options)
 
     cmd = [_format_options(cmdline[0])]
 
     for row in cmdline[1:]:
-        cmd.append(u'    ' + _format_options(row))
+        cmd.append('    ' + _format_options(row))
 
-    return u' \\\n'.join(cmd)
+    return '\n'.join(cmd)
 
 
 @deprecated
 def fetch_url(url, logger=None, success_codes=(200,)):
-    # type: (Text, Optional[ContextAdapter], Tuple[int, ...]) -> Tuple[Any, Text]
+    # type: (str, Optional[ContextAdapter], Tuple[int, ...]) -> Tuple[Any, str]
 
     """
     "Get me content of this URL" helper.
@@ -808,7 +809,7 @@ def fetch_url(url, logger=None, success_codes=(200,)):
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :param tuple success_codes: tuple of HTTP response codes representing successfull request.
     :returns: tuple ``(response, content)`` where ``response`` is what
-      :py:func:`six.moves.urllib.request.urlopen` returns, and ``content`` is the payload
+      :py:func:`requests.get` returns, and ``content`` is the payload
       of the response.
     """
 
@@ -817,18 +818,16 @@ def fetch_url(url, logger=None, success_codes=(200,)):
     logger.debug("opening URL '{}'".format(url))
 
     try:
-        response = urllib.request.urlopen(url)
-        code, content = response.getcode(), response.read()
+        with requests(logger=logger) as req:
+            response = req.get(url)
 
     except urllib.error.HTTPError as exc:
         raise GlueError("Failed to fetch URL '{}': {}".format(url, exc))
 
-    log_blob(logger.debug, '{}: {}'.format(url, code), content)
-
-    if code not in success_codes:
+    if response.status_code not in success_codes:
         raise GlueError("Unsuccessfull response from '{}'".format(url))
 
-    return response, ensure_text(content)
+    return response, response.content
 
 
 @contextlib.contextmanager
@@ -915,7 +914,7 @@ def requests(logger=None):
 
 
 def treat_url(url, logger=None):
-    # type: (Text, Optional[ContextAdapter]) -> Text
+    # type: (str, Optional[ContextAdapter]) -> str
 
     """
     Remove "weird" artifacts from the given URL. Collapse adjacent '.'s, apply '..', etc.
@@ -936,11 +935,11 @@ def treat_url(url, logger=None):
     if norm_url is None:
         raise GlueError("'{}' does not look like an URL".format(url))
 
-    return cast(Text, norm_url.strip())
+    return cast(str, norm_url.strip())
 
 
 def render_template(template, logger=None, **kwargs):
-    # type: (Union[Text, jinja2.environment.Template], Optional[ContextAdapter], **str) -> Text
+    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **str) -> str
 
     """
     Render Jinja2 template. Logs errors, and raises an exception when it's not possible
@@ -955,14 +954,18 @@ def render_template(template, logger=None, **kwargs):
 
     logger = logger or Logging.get_logger()
 
+    assert logger is not None
+
     try:
         def _render(template, source):
-            # type: (jinja2.Template, Text) -> Text
+            # type: (jinja2.Template, str) -> str
+
+            assert logger is not None
 
             log_blob(logger.debug, 'rendering template', source)
             log_dict(logger.verbose, 'context', kwargs)
 
-            return template.render(**kwargs).strip()
+            return ensure_str(template.render(**kwargs).strip())
 
         if isinstance(template, six.text_type):
             return _render(jinja2.Template(template), template)
@@ -997,7 +1000,7 @@ def YAML():
 
 
 def from_yaml(yaml_string):
-    # type: (Text) -> Any
+    # type: (str) -> Any
 
     """
     Convert YAML in a string into Python data structures.
@@ -1010,7 +1013,7 @@ def from_yaml(yaml_string):
 
 
 def load_yaml(filepath, logger=None):
-    # type: (Text, Optional[ContextAdapter]) -> Any
+    # type: (str, Optional[ContextAdapter]) -> Any
 
     """
     Load data stored in YAML file, and return their Python representation.
@@ -1047,7 +1050,7 @@ def load_yaml(filepath, logger=None):
 
 
 def dump_yaml(data, filepath, logger=None):
-    # type: (Any, Text, Optional[ContextAdapter]) -> None
+    # type: (Any, str, Optional[ContextAdapter]) -> None
 
     """
     Save data stored in variable to YAML file.
@@ -1100,7 +1103,7 @@ def _json_byteify(data, ignore_dicts=False):
 
 
 def from_json(json_string):
-    # type: (Text) -> Any
+    # type: (str) -> Any
 
     """
     Convert JSON in a string into Python data structures.
@@ -1113,7 +1116,7 @@ def from_json(json_string):
 
 
 def load_json(filepath, logger=None):
-    # type: (Text, Optional[ContextAdapter]) -> Any
+    # type: (str, Optional[ContextAdapter]) -> Any
 
     """
     Load data stored in JSON file, and return their Python representation.
@@ -1149,7 +1152,7 @@ def load_json(filepath, logger=None):
 
 
 def _load_yaml_variables(data, enabled=True, logger=None):
-    # type: (Any, bool, Optional[ContextAdapter]) -> Callable[[Text], Union[Text, List[Text]]]
+    # type: (Any, bool, Optional[ContextAdapter]) -> Callable[[str], Union[str, List[str]]]
     """
     Load all variables from files referenced by a YAML, and return function to render a string
     as a template using these variables. The files containing variables are mentioned in comments,
@@ -1165,7 +1168,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     logger = logger or Logging.get_logger()
 
     def _render_template_nop(s):
-        # type: (Text) -> Text
+        # type: (str) -> str
 
         return s
 
@@ -1182,7 +1185,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
 
     # Ok, so this YAML data contains comments. Check their values to find `!include` directives.
     # Load referenced files and merged them into a single context.
-    context = {}  # type: Dict[Text, Any]
+    context = {}  # type: Dict[str, Any]
 
     for comment in data.ca.comment[1]:
         value = comment.value.strip()
@@ -1201,7 +1204,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
         context.update(load_yaml(variables_map_path, logger=logger))
 
     def _render_template(s):
-        # type: (Union[Text, List[Text]]) -> Union[Text, List[Text]]
+        # type: (Union[str, List[str]]) -> Union[str, List[str]]
 
         if isinstance(s, six.text_type):
             return render_template(s, logger=logger, **context)
@@ -1235,7 +1238,7 @@ class SimplePatternMap(LoggerMixin, object):
     """
 
     def __init__(self, filepath, logger=None, allow_variables=False):
-        # type: (Text, Optional[ContextAdapter], bool) -> None
+        # type: (str, Optional[ContextAdapter], bool) -> None
 
         super(SimplePatternMap, self).__init__(logger or Logging.get_logger())
 
@@ -1246,7 +1249,7 @@ class SimplePatternMap(LoggerMixin, object):
 
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
-        self._compiled_map = []  # type: List[Tuple[Pattern[Text], Text]]
+        self._compiled_map = []  # type: List[Tuple[Pattern[str], str]]
 
         for pattern_dict in pattern_map:
             if not isinstance(pattern_dict, dict):
@@ -1272,7 +1275,7 @@ class SimplePatternMap(LoggerMixin, object):
             self._compiled_map.append((pattern, result))
 
     def match(self, s):
-        # type: (Text) -> Text
+        # type: (str) -> str
 
         """
         Try to match ``s`` by the map. If the match is found - the first one wins - then its
@@ -1353,8 +1356,8 @@ class PatternMap(LoggerMixin, object):
     """
 
     def __init__(self,
-                 filepath,  # type: Text
-                 spices=None,  # type: Optional[Dict[Text, Callable[..., Callable[[Any, Text], Text]]]]
+                 filepath,  # type: str
+                 spices=None,  # type: Optional[Dict[str, Callable[..., Callable[[Any, str], str]]]]
                  logger=None,  # type: Optional[ContextAdapter]
                  allow_variables=False  # type: bool
                 ):  # noqa
@@ -1372,10 +1375,10 @@ class PatternMap(LoggerMixin, object):
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         def _create_simple_repl(repl):
-            # type: (Text) -> Callable[[Pattern[Text], Text], Text]
+            # type: (str) -> Callable[[Pattern[str], str], str]
 
             def _replace(pattern, target):
-                # type: (Pattern[Text], Text) -> Any
+                # type: (Pattern[str], str) -> Any
 
                 """
                 Use `repl` to construct image from `target`, honoring all backreferences made by `pattern`.
@@ -1392,7 +1395,7 @@ class PatternMap(LoggerMixin, object):
 
             return _replace
 
-        self._compiled_map = []  # type: List[Tuple[Pattern[Text], List[Callable[[Pattern[Text], Text], Text]]]]
+        self._compiled_map = []  # type: List[Tuple[Pattern[str], List[Callable[[Pattern[str], str], str]]]]
 
         for pattern_dict in pattern_map:
             log_dict(self.debug, 'pattern dict', pattern_dict)
@@ -1408,7 +1411,7 @@ class PatternMap(LoggerMixin, object):
             converter_chains = _render_template(pattern_dict[pattern_key])
 
             # Given how YAML works, `pattern` is a string, but the type of `_render_template` return value
-            # is Union[Text, List[Text]] - this covers possible lists on the right side of the equation.
+            # is Union[str, List[str]] - this covers possible lists on the right side of the equation.
             # To make mypy happy, let's collapse type of `pattern`.
             assert isinstance(pattern, six.text_type)
 
@@ -1446,7 +1449,7 @@ class PatternMap(LoggerMixin, object):
             self._compiled_map.append((compiled_pattern, compiled_chains))
 
     def match(self, s, multiple=False):
-        # type: (Text, bool) -> Union[Text, List[Text]]
+        # type: (str, bool) -> Union[str, List[str]]
 
         """
         Try to match ``s`` by the map. If the match is found - the first one wins - then its
@@ -1521,9 +1524,9 @@ def wait(label, check, timeout=None, tick=30, logger=None):
         end_time = time.time() + timeout
 
     def _timeout():
-        # type: () -> Text
+        # type: () -> str
 
-        return u'{} seconds'.format(int(end_time - time.time())) if timeout is not None else u'infinite'
+        return '{} seconds'.format(int(end_time - time.time())) if timeout is not None else 'infinite'
 
     logger.debug("waiting for condition '{}', timeout {}, check every {} seconds".format(label, _timeout(),
                                                                                          tick))
@@ -1547,7 +1550,7 @@ def wait(label, check, timeout=None, tick=30, logger=None):
 
 
 def new_xml_element(tag_name, _parent=None, **attrs):
-    # type: (Text, Optional[Any], **str) -> Any
+    # type: (str, Optional[Any], **str) -> Any
 
     """
     Create new XML element.

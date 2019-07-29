@@ -10,13 +10,10 @@ import logging
 import os
 import sys
 import warnings
-import ast
 
 from functools import partial
 
-import jinja2
-import six
-from six import ensure_str, ensure_text, iterkeys, iteritems, reraise, string_types
+from six import iterkeys, iteritems, ensure_str
 from six.moves import configparser
 
 import jinja2
@@ -29,14 +26,15 @@ from .help import LineWrapRawTextHelpFormatter, option_help, docstring_to_help, 
 from .log import Logging, LoggerMixin, ContextAdapter, ModuleAdapter, log_dict, VERBOSE
 
 # Type annotations
-# pylint: disable=unused-import,wrong-import-order
-from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn  # noqa
+# pylint: disable=unused-import,wrong-import-order,
+from typing import TYPE_CHECKING, cast, overload, Any, Callable, Dict, Iterable, List, Optional, NoReturn, Text  # noqa
 from typing import Sequence, Tuple, Type, Union, NamedTuple  # noqa
 from types import TracebackType  # noqa
 from .log import LoggingFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
     import gluetool.color  # noqa
+    # pylint: disable=cyclic-import
     import gluetool.utils  # noqa
 
 # Type definitions
@@ -45,20 +43,30 @@ SharedType = Callable[..., Any]
 
 
 DEFAULT_MODULE_CONFIG_PATHS = [
-    u'/etc/gluetool.d/config',
+    '/etc/gluetool.d/config',
     os.path.expanduser('~/.gluetool.d/config'),
     os.path.abspath('./.gluetool.d/config')
 ]
 
-DEFAULT_DATA_PATH = u'{}/data'.format(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DATA_PATH = '{}/data'.format(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_MODULE_ENTRY_POINTS = [
     'gluetool.modules'
-]
+]  # type: List[str]
 
 DEFAULT_MODULE_PATHS = [
-    u'{}/gluetool_modules'.format(sys.prefix)
-]
+    '{}/gluetool_modules'.format(sys.prefix)
+]  # type: List[str]
+
+
+# Install workarounds from Six - this makes templates compatible with both Python 2 and 3 when it comes
+# to iterating over dictionaries.
+jinja2.defaults.DEFAULT_NAMESPACE.update({
+    'iteritems': six.iteritems,
+    'iterkeys': six.iterkeys,
+    'itervalues': six.itervalues
+})
+
 
 #
 # NOTE: pipelines and shared functions.
@@ -75,15 +83,6 @@ DEFAULT_MODULE_PATHS = [
 # the module) is inspected, then its parent, after that parent's parent and so on. This is ensured by `Module`
 # API "secretly" calling `Glue` methods, which take care of checking all the layers.
 #
-
-
-# Install workarounds from Six - this makes templates compatible with both Python 2 and 3 when it comes
-# to iterating over dictionaries.
-jinja2.defaults.DEFAULT_NAMESPACE.update({
-    'iteritems': six.iteritems,
-    'iterkeys': six.iterkeys,
-    'itervalues': six.itervalues
-})
 
 
 class DryRunLevels(enum.IntEnum):
@@ -119,7 +118,7 @@ class GlueError(Exception):
         the exception that caused this one to be born. ``None`` otherwise.
     """
 
-    no_sentry_exceptions = []  # type: List[Text]
+    no_sentry_exceptions = []  # type: List[str]
 
     def __init__(self, message, caused_by=None, sentry_fingerprint=None, sentry_tags=None, **kwargs):
         # type: (str, Optional[ExceptionInfoType], Optional[List[str]], Optional[Dict[str, str]], **Any) -> None
@@ -250,11 +249,10 @@ class GlueCommandError(GlueError):
     """
 
     def __init__(self, cmd, output, **kwargs):
-        # type: (List[Text], gluetool.utils.ProcessOutput, **Any) -> None
+        # type: (List[str], gluetool.utils.ProcessOutput, **Any) -> None
 
-        super(GlueCommandError, self).__init__("Command '{}' failed with exit code {}".format(
-            [ensure_str(s) for s in cmd], output.exit_code
-        ), **kwargs)
+        super(GlueCommandError, self).__init__("Command '{}' failed with exit code {}".format(cmd, output.exit_code),
+                                               **kwargs)
 
         self.cmd = cmd
         self.output = output
@@ -337,17 +335,17 @@ class PipelineStepModule(PipelineStep):
     """
     Step of ``gluetool``'s  pipeline backed by a module.
 
-    :param text module: name to give to the module instance. This name is used e.g. in logging or when
+    :param str module: name to give to the module instance. This name is used e.g. in logging or when
         searching for module's config file.
-    :param text actual_module: The actual module class the step uses. Usually it is same as ``module``
+    :param str actual_module: The actual module class the step uses. Usually it is same as ``module``
         but may differ, ``module`` is then a mere "alias". ``actual_module`` is used to locate
         a module class, whose instance is then given name ``module``.
-    :param list(text) argv: list of options to be given to the module, in a form similar
+    :param list(str) argv: list of options to be given to the module, in a form similar
         to :py:data:`sys.argv`.
     """
 
     def __init__(self, module, actual_module=None, argv=None):
-        # type: (Text, Optional[Text], Optional[List[Text]]) -> None
+        # type: (str, Optional[str], Optional[List[str]]) -> None
 
         self.module = module
         self.actual_module = actual_module or module
@@ -369,9 +367,9 @@ class PipelineStepModule(PipelineStep):
 
     @property
     def module_designation(self):
-        # type: () -> Text
+        # type: () -> str
 
-        return self.module if self.module == self.actual_module else u'{}:{}'.format(self.module, self.actual_module)
+        return self.module if self.module == self.actual_module else '{}:{}'.format(self.module, self.actual_module)
 
     def serialize_to_json(self):
         # type: () -> Dict[str, Any]
@@ -842,7 +840,7 @@ class ArgumentParser(argparse.ArgumentParser):
     """
 
     def error(self, message):  # type: ignore  # incompatible with supertype because of unicode
-        # type: (Text) -> None
+        # type: (str) -> None
 
         """
         Must not return - raising an exception is a good way to "not return".
@@ -906,21 +904,21 @@ class Configurable(LoggerMixin, object):
     have is split into multiple smaller dictionaries, and each one is coupled with the group name in a ``tuple``.
     """
 
-    required_options = []  # type: Iterable[Text]
+    required_options = []  # type: Iterable[str]
     """Iterable of names of required options."""
 
-    options_note = None  # type: Text
+    options_note = None  # type: str
     """If set, it will be printed after all options as a help's epilog."""
 
     supported_dryrun_level = DryRunLevels.DEFAULT
     """Highest supported level of dry-run."""
 
-    name = None  # type: Text
+    name = None  # type: str
     """
     Module name. Usually matches the name of the source file, no suffix.
     """
 
-    unique_name = None  # type: Optional[Text]
+    unique_name = None  # type: Optional[str]
     """
     Unque name of this (module) instance.
 
@@ -941,8 +939,8 @@ class Configurable(LoggerMixin, object):
         Given dictionary defining options, call a callback for each of them.
 
         :param dict options: Dictionary of options, in a form ``option-name: option-params``.
-        :param callable callback: Must accept at least 3 parameters: option name (``text``),
-            all option names (short and long ones) (``tuple(text, text)``), and option params
+        :param callable callback: Must accept at least 3 parameters: option name (``str``),
+            all option names (short and long ones) (``tuple(str, str)``), and option params
             (``dict``).
         """
 
@@ -966,7 +964,7 @@ class Configurable(LoggerMixin, object):
 
         :param options: List of option groups, or a dict listing options directly.
         :param callable callback: Must accept at least 2 parameters: ``options`` (``dict``), listing options
-            in the group, and keyword parameter ``group_name`` (``text``), which is set to group name when
+            in the group, and keyword parameter ``group_name`` (``str``), which is set to group name when
             the ``options`` defines an option group.
         """
 
@@ -988,28 +986,28 @@ class Configurable(LoggerMixin, object):
         super(Configurable, self).__init__(logger)
 
         # Initialize configuration store
-        self._config = {}  # type: Dict[Text, Any]
+        self._config = {}  # type: Dict[str, Any]
 
         # Initialize values in the store, and make sanity check of option names
         def _fail_name(name):
-            # type: (Text) -> None
+            # type: (str) -> None
 
             raise GlueError("Option name must be either a string or (<letter>, <string>), '{}' found".format(name))
 
         def _verify_option(name, names, params):
-            # type: (Text, List[Text], Dict[Text, Any]) -> None
+            # type: (str, List[str], Dict[str, Any]) -> None
 
-            if isinstance(names, six.string_types):
-                self._config[ensure_text(name)] = None
+            if isinstance(names, str):
+                self._config[name] = None
 
             elif isinstance(names, tuple):
-                if not isinstance(names[0], six.string_types) or len(names[0]) != 1:
+                if not isinstance(names[0], str) or len(names[0]) != 1:
                     _fail_name(name)
 
-                if not isinstance(names[1], six.string_types) or len(names[1]) < 2:
+                if not isinstance(names[1], str) or len(names[1]) < 2:
                     _fail_name(name)
 
-                self._config[ensure_text(name)] = None
+                self._config[name] = None
 
             else:
                 _fail_name(name)
@@ -1022,7 +1020,7 @@ class Configurable(LoggerMixin, object):
             params['help'] = option_help(params['help'])
 
         def _verify_options(options, **kwargs):
-            # type: (Dict[Text, Dict[Text, Any]], **Any) -> None
+            # type: (Dict[str, Dict[str, Any]], **Any) -> None
 
             # pylint: disable=unused-argument
 
@@ -1031,7 +1029,7 @@ class Configurable(LoggerMixin, object):
         Configurable._for_each_option_group(_verify_options, self.options)
 
     def _parse_config(self, paths):
-        # type: (Sequence[Text]) -> None
+        # type: (List[str]) -> None
 
         """
         Parse configuration files. Uses :py:mod:`ConfigParser` for the actual parsing.
@@ -1043,18 +1041,17 @@ class Configurable(LoggerMixin, object):
         log_dict(self.debug, 'Loading configuration from following paths', paths)
 
         parser = configparser.ConfigParser()
-
-        parsed_paths = parser.read([ensure_str(path) for path in paths])
+        parsed_paths = parser.read(paths)
 
         log_dict(self.debug, 'Read configuration files', parsed_paths)
 
         def _inject_value(name, names, params):
-            # type: (Text, Tuple[Text, ...], Dict[Text, Any]) -> None
+            # type: (str, Tuple[str, ...], Dict[str, Any]) -> None
 
             # pylint: disable=unused-argument
 
             try:
-                value = parser.get('default', ensure_str(name))
+                value = parser.get('default', name)
 
             except (configparser.NoOptionError, configparser.NoSectionError):
                 return
@@ -1064,8 +1061,13 @@ class Configurable(LoggerMixin, object):
                     value = params['type'](value)
 
                 except ValueError as exc:
-                    raise GlueError("Value of option '{}' expected to be '{}' but cannot be parsed: '{}'".format(
-                        name, params['type'].__name__, exc))
+                    raise GlueError(
+                        "Value of option '{}' expected to be '{}' but cannot be parsed: '{}'".format(
+                            name,
+                            params['type'].__name__,
+                            str(exc)
+                        )
+                    )
 
             self._config[name] = value
             self.debug("Option '{}' set to '{}' by config file".format(name, value))  # pylint: disable=not-callable
@@ -1093,14 +1095,14 @@ class Configurable(LoggerMixin, object):
         root_parser = ArgumentParser(**kwargs)
 
         def _add_option(parser, name, names, params):
-            # type: (ArgumentParser, Text, Tuple[Text, ...], Dict[Text, Any]) -> None
+            # type: (ArgumentParser, str, Tuple[str, ...], Dict[str, Any]) -> None
 
             if params.get('raw', False) is True:
-                final_names = (name,)  # type: Tuple[Text, ...]
+                final_names = (name,)  # type: Tuple[str, ...]
                 del params['raw']
 
             else:
-                if isinstance(names, six.text_type):
+                if isinstance(names, str):
                     final_names = ('--{}'.format(name),)
 
                 else:
@@ -1109,7 +1111,7 @@ class Configurable(LoggerMixin, object):
             parser.add_argument(*final_names, **params)
 
         def _add_options(group_options, group_name=None):
-            # type: (Any, Optional[Text]) -> None
+            # type: (Any, Optional[str]) -> None
 
             group_parser = None  # type: Optional[Union[argparse.ArgumentParser, argparse._ArgumentGroup]]
 
@@ -1148,7 +1150,7 @@ class Configurable(LoggerMixin, object):
 
         # add the parsed args to options
         def _inject_value(name, names, params):
-            # type: (Text, Tuple[Text, ...], Dict[Text, Any]) -> None
+            # type: (str, Tuple[str, ...], Dict[str, Any]) -> None
 
             # pylint: disable=unused-argument
 
@@ -1200,7 +1202,7 @@ class Configurable(LoggerMixin, object):
         raise NotImplementedError('Implement this method to enable the actual parsing')
 
     def parse_args(self, args):
-        # type: (List[Text]) -> None
+        # type: (List[str]) -> None
 
         """
         Public entry point to argument parsing. Child classes must implement this method,
@@ -1236,13 +1238,13 @@ class Configurable(LoggerMixin, object):
 
     @overload
     def option(self, name):
-        # type: (Text) -> Any
+        # type: (str) -> Any
 
         pass
 
     @overload  # noqa
     def option(self, *names):
-        # type: (*Text) -> List[Any]
+        # type: (*str) -> List[Any]
 
         pass
 
@@ -1250,7 +1252,7 @@ class Configurable(LoggerMixin, object):
         """
         Return values of given options from module's configuration store.
 
-        :param text names: names of requested options.
+        :param str names: names of requested options.
         :returns: either a value or ``None`` if such option does not exist. When multiple options are requested,
             a tuple of their values is returned, for a single option its value is **not** wrapped by a tuple.
         """
@@ -1286,7 +1288,7 @@ class Configurable(LoggerMixin, object):
         return self.dryrun_level != DryRunLevels.DEFAULT
 
     def _dryrun_allows(self, threshold, msg):
-        # type: (int, Text) -> bool
+        # type: (int, str) -> bool
 
         """
         Check whether current dry-run level allows an action. If the current dry-run level
@@ -1296,7 +1298,7 @@ class Configurable(LoggerMixin, object):
         level is :py:attr:`DryRunLevels.DRY`, the action is allowed.
 
         :param DryRunLevels threshold: Dry-run level the action is not allowed.
-        :param text msg: Message logged (as a warning) when the action is deemed not allowed.
+        :param str msg: Message logged (as a warning) when the action is deemed not allowed.
         :returns: ``True`` when action is allowed, ``False`` otherwise.
         """
 
@@ -1307,7 +1309,7 @@ class Configurable(LoggerMixin, object):
         return True
 
     def dryrun_allows(self, msg):
-        # type: (Text) -> bool
+        # type: (str) -> bool
 
         """
         Checks whether current dry-run level allows an action which is disallowed on
@@ -1319,7 +1321,7 @@ class Configurable(LoggerMixin, object):
         return self._dryrun_allows(DryRunLevels.DRY, msg)
 
     def isolatedrun_allows(self, msg):
-        # type: (Text) -> bool
+        # type: (str) -> bool
 
         """
         Checks whether current dry-run level allows an action which is disallowed on
@@ -1345,7 +1347,7 @@ class Configurable(LoggerMixin, object):
 
     @property
     def eval_context(self):
-        # type: () -> Dict[Text, Any]
+        # type: () -> Dict[str, Any]
 
         """
         Return "evaluation context" - a dictionary of variable names (usually in uppercase)
@@ -1474,7 +1476,7 @@ class Module(Configurable):
         return [os.path.join(root, self.unique_name) for root in roots]
 
     def __init__(self, glue, name):
-        # type: (Glue, Text) -> None
+        # type: (Glue, str) -> None
 
         # we need to save the unique name in case there are more aliases available
         self.unique_name = name
@@ -1511,7 +1513,7 @@ class Module(Configurable):
         self._parse_config(self._paths_with_module(self.glue.module_config_paths))
 
     def _generate_shared_functions_help(self):
-        # type: () -> Text
+        # type: () -> str
 
         """
         Generate help for shared functions provided by the module.
@@ -1532,11 +1534,15 @@ class Module(Configurable):
 
             functions.append((name, getattr(self, name)))
 
-        return jinja2.Template(trim_docstring("""
+        return ensure_str(
+            jinja2.Template(
+                trim_docstring("""
         {{ '** Shared functions **' | style(fg='yellow') }}
 
         {{ FUNCTIONS }}
-        """)).render(FUNCTIONS=functions_help(functions))
+                """)
+            ).render(FUNCTIONS=functions_help(functions))
+        )
 
     def parse_args(self, args):
         # type: (Any) -> None
@@ -1677,7 +1683,7 @@ class Module(Configurable):
         """
 
     def run_module(self, module, args=None):
-        # type: (Text, Optional[List[Text]]) -> None
+        # type: (str, Optional[List[str]]) -> None
 
         self.glue.run_module(module, args or [])
 
@@ -1850,7 +1856,7 @@ class Glue(Configurable):
 
     @property
     def module_paths(self):
-        # type: () -> List[Text]
+        # type: () -> List[str]
 
         """
         List of paths in which modules reside.
@@ -1861,7 +1867,7 @@ class Glue(Configurable):
 
     @property
     def module_data_paths(self):
-        # type: () -> List[Text]
+        # type: () -> List[str]
 
         """
         List of paths in which module data files reside.
@@ -1872,7 +1878,7 @@ class Glue(Configurable):
 
     @property
     def module_config_paths(self):
-        # type: () -> List[Text]
+        # type: () -> List[str]
 
         """
         List of paths in which module config files reside.
@@ -1997,7 +2003,7 @@ class Glue(Configurable):
 
     @property
     def eval_context(self):
-        # type: () -> Dict[Text, Any]
+        # type: () -> Dict[str, Any]
 
         """
         Returns "global" evaluation context - some variables that are nice to have in all contexts.
@@ -2047,7 +2053,7 @@ class Glue(Configurable):
         return cast(Module, stack[3][0].f_locals['self'])
 
     def _eval_context(self):
-        # type: () -> Dict[Text, Any]
+        # type: () -> Dict[str, Any]
 
         """
         Gather contexts of all modules in a pipeline and merge them together.
@@ -2064,7 +2070,7 @@ class Glue(Configurable):
         self.debug('gather pipeline eval context')
 
         context = {
-            u'MODULE': self._eval_context_module_caller()
+            'MODULE': self._eval_context_module_caller()
         }
 
         # 1st "module" is always this instance of ``Glue``.
@@ -2132,6 +2138,7 @@ class Glue(Configurable):
 
     def _check_pm_file(self, filepath):
         # type: (str) -> bool
+
         """
         Make sure a file looks like a ``gluetool`` module:
 
@@ -2200,6 +2207,7 @@ class Glue(Configurable):
 
     def _do_import_pm(self, filepath, pm_name):
         # type: (str, str) -> Any
+
         """
         Attempt to import a file as a Python module.
 
@@ -2308,12 +2316,11 @@ class Glue(Configurable):
                 if not filename.endswith('.py'):
                     continue
 
-                self.modules[mname] = {
-                    'class': cls,
-                    'filepath': filepath,
-                    'description': cls.description,
-                    'group': group
-                }
+                # A group of the module is defined by the directories it lies in under the ``dirpath``.
+                if root == dirpath:
+                    group_name = ''
+                else:
+                    group_name = root.replace(dirpath + os.sep, '')
 
                 pm_name = '{}.{}.{}'.format(
                     pm_prefix,
@@ -2330,6 +2337,8 @@ class Glue(Configurable):
 
         for ep_entry in pkg_resources.iter_entry_points(entry_point):
             klass = ep_entry.load()
+
+            assert ep_entry.dist is not None
 
             self._register_module(registry, getattr(klass, 'group', ''), klass, ep_entry.dist.location)
 
@@ -2403,7 +2412,7 @@ class Glue(Configurable):
 
     # pylint: disable=arguments-differ
     def parse_config(self, paths):  # type: ignore  # signature differs on purpose
-        # type: (List[Text]) -> None
+        # type: (List[str]) -> None
 
         self._parse_config(paths)
 
@@ -2489,13 +2498,13 @@ class Glue(Configurable):
         return self._dryrun_level
 
     def init_module(self, module_name, actual_module_name=None):
-        # type: (Text, Optional[Text]) -> Module
+        # type: (str, Optional[str]) -> Module
 
         """
         Given a name of the module, create its instance and give it a name.
 
-        :param text module_name: Name under which will be the module instance known.
-        :param text actual_module_name: Name of the module to instantiate. It does not have to match
+        :param str module_name: Name under which will be the module instance known.
+        :param str actual_module_name: Name of the module to instantiate. It does not have to match
             ``module_name`` - ``actual_module_name`` refers to the list of known ``gluetool`` modules
             while ``module_name`` is basically an arbitrary name new instance calls itself. If it's
             not set, which is the most common situation, it defaults to ``module_name``.
@@ -2525,12 +2534,13 @@ class Glue(Configurable):
 
     def run_module(self, module_name, module_argv=None, actual_module_name=None):
         # type: (str, Optional[List[str]], Optional[str]) -> PipelineReturnType
+
         """
         Syntax sugar for :py:meth:`run_modules`, in the case you want to run just a one-shot module.
 
-        :param text module_name: Name under which will be the module instance known.
-        :param list(text) module_argv: Arguments of the module.
-        :param text actual_module_name: Name of the module to instantiate. It does not have to match
+        :param str module_name: Name under which will be the module instance known.
+        :param list(str) module_argv: Arguments of the module.
+        :param str actual_module_name: Name of the module to instantiate. It does not have to match
             ``module_name`` - ``actual_module_name`` refers to the list of known ``gluetool`` modules
             while ``module_name`` is basically an arbitrary name new instance calls itself. If it's
             not set, which is the most common situation, it defaults to ``module_name``.
@@ -2554,7 +2564,7 @@ class Glue(Configurable):
 
         groups = collections.defaultdict(dict)  # type: Dict[str, ModuleRegistryType]
 
-        for name, module_info in modules.iteritems():
+        for name, module_info in iteritems(modules):
             groups[module_info.group][name] = module_info
 
         return groups
@@ -2603,16 +2613,11 @@ class Glue(Configurable):
                 ''
             ]
 
-            for group_name, group in sorted(as_groups.iteritems()):
+            for group_name, group in sorted(iteritems(as_groups)):
                 # skip groups that are not in the list
                 # note that groups is None if all groups should be shown
                 if groups and group_name not in groups:
                     continue
-
-                usage.append('')
-                usage.append('%-2s%s' % (' ', group))
-                for key, val in sorted(iteritems(plist[group])):
-                    usage.append('%-4s%-32s %s' % ('', key, val))
 
                 group = as_groups[group_name]
 
@@ -2620,7 +2625,7 @@ class Glue(Configurable):
                     _add_no_modules()
                     continue
 
-                for module_name, module in sorted(group.iteritems()):
+                for module_name, module in sorted(iteritems(group)):
                     # Indent module name by 4 spaces, and reserve 32 characters for each module name,
                     # starting all descriptions at the same offset.
                     descriptions.append('    {:32} {}'.format(module_name, module.klass.description))
