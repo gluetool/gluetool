@@ -8,7 +8,7 @@ from gluetool.utils import render_template
 import jinja2
 
 
-TEMPLATE = u"""
+TEMPLATE = """
 This is a dummy template: {{ bar }}
 """
 

@@ -939,7 +939,7 @@ def treat_url(url, logger=None):
 
 
 def render_template(template, logger=None, **kwargs):
-    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **str) -> str
+    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **Any) -> str
 
     """
     Render Jinja2 template. Logs errors, and raises an exception when it's not possible
@@ -967,7 +967,7 @@ def render_template(template, logger=None, **kwargs):
 
             return ensure_str(template.render(**kwargs).strip())
 
-        if isinstance(template, six.text_type):
+        if isinstance(template, str):
             return _render(jinja2.Template(template), template)
 
         if isinstance(template, jinja2.environment.Template):

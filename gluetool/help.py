@@ -14,13 +14,10 @@ import inspect
 import os
 import textwrap
 
-from functools import partial
-
 import docutils.core
 import docutils.nodes
 import docutils.parsers.rst
 import docutils.writers
-import jinja2
 import sphinx.writers.text
 import sphinx.locale
 import sphinx.util.nodes
@@ -58,6 +55,26 @@ CROP_WIDTH = WIDTH - 10
 
 # Tell Sphinx to render text into a slightly narrower space to account for some indenting
 sphinx.writers.text.MAXWIDTH = CROP_WIDTH
+
+
+FUNCTIONS_HELP_TEMPLATE = """
+{% for signature, body in FUNCTIONS %}
+  {{ signature }}
+
+{{ body }}
+{% endfor %}
+"""
+
+
+EVAL_CONTEXT_HELP_TEMPLATE = """
+{{ '** Evaluation context **' | style(fg='yellow') }}
+
+{% for name, description in iteritems(CONTEXT) %}
+  * {{ name | style(fg='blue') }}
+
+{{ description | indent(4, true) }}
+{% endfor %}
+"""
 
 
 # Semantic colorizers
@@ -132,7 +149,7 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
         super(LineWrapRawTextHelpFormatter, self).__init__(*args, **kwargs)
 
-    def _split_lines(self, text, width):  # # type: ignore  # incompatible with super type because of unicode
+    def _split_lines(self, text, width):  # type: ignore  # incompatible with super type because of unicode
         # type: (str, int) -> List[str]
 
         text = ensure_str(self._whitespace_matcher.sub(' ', ensure_str(text)).strip())
@@ -291,12 +308,16 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
     # For each line - which is actually a paragraph, given the text comes from RST - wrap it
     # to fit inside given line length (a bit shorter, there's a prefix for each line!).
     wrapped_lines = []  # type: List[str]
-    wrap = partial(textwrap.wrap, width=width - len(line_prefix), initial_indent=line_prefix,
-                   subsequent_indent=line_prefix)
 
     for line in processed.splitlines():
         if line:
-            wrapped_lines += wrap(line)
+            wrapped_lines += textwrap.wrap(
+                line,
+                width=width - len(line_prefix),
+                initial_indent=line_prefix,
+                subsequent_indent=line_prefix
+            )
+
         else:
             # yeah, we could just append empty string but line_prefix could be any string, e.g. 'foo: '
             wrapped_lines.append(line_prefix)
@@ -370,7 +391,7 @@ def function_help(func, name=None):
             if isinstance(default, six.text_type):
                 default = "'{}'".format(default)
 
-            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(six.text_type(default))))
+            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(cast(str, default))))
 
     return (
         # signature
@@ -392,13 +413,16 @@ def functions_help(functions):
     :returns: Formatted help.
     """
 
-    return jinja2.Template(trim_docstring("""
-    {% for signature, body in FUNCTIONS %}
-      {{ signature }}
+    # pylint: disable=cyclic-import
+    from .utils import render_template
 
-    {{ body }}
-    {% endfor %}
-    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions])
+    return render_template(
+        FUNCTIONS_HELP_TEMPLATE,
+        FUNCTIONS=[
+            function_help(func, name=name)
+            for name, func in functions
+        ]
+    )
 
 
 def extract_eval_context_info(source, logger=None):
@@ -511,6 +535,9 @@ def eval_context_help(source):
     :returns: Formatted help.
     """
 
+    # pylint: disable=cyclic-import
+    from .utils import render_template
+
     context_info = extract_eval_context_info(source)
 
     if not context_info:
@@ -520,12 +547,4 @@ def eval_context_help(source):
         name: docstring_to_help(description, line_prefix='') for name, description in iteritems(context_info)
     }
 
-    return jinja2.Template("""
-{{ '** Evaluation context **' | style(fg='yellow') }}
-
-{% for name, description in iteritems(CONTEXT) %}
-  * {{ name | style(fg='blue') }}
-
-{{ description | indent(4, true) }}
-{% endfor %}
-""").render(CONTEXT=context_content).strip()
+    return render_template(EVAL_CONTEXT_HELP_TEMPLATE, CONTEXT=context_content)
