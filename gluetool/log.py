@@ -489,10 +489,20 @@ class ContextAdapter(logging.LoggerAdapter):
         on the way. Therefore ``update`` instead of assignment.
         """
 
-        if 'extra' not in kwargs or kwargs['extra'] is None:
-            kwargs['extra'] = {}
+        extra = kwargs.get('extra', {})
 
-        kwargs['extra'].update(self.extra)  # type: ignore  # `self.extra` does exist
+        if extra is None:
+            extra = {}
+
+        if not isinstance(extra, dict):
+            extra = {
+                'legacy-extra': extra
+            }
+
+        extra.update(self.extra)  # type: ignore  # `self.extra` does exist
+
+        kwargs['extra'] = extra
+
         return msg, kwargs
 
     # pylint: disable=too-many-arguments,arguments-differ
@@ -755,7 +765,7 @@ class LoggingFormatter(logging.Formatter):
         handler_logs_traceback = self.log_tracebacks is True \
             or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))
 
-        if record.exc_info and handler_logs_traceback:
+        if record.exc_info and record.exc_info != (None, None, None) and handler_logs_traceback:
             fmt.append('{exc_text}')
 
             # \n helps formatting - logging would add formatted chain right after the leading message
