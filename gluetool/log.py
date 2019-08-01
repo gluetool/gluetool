@@ -640,10 +640,13 @@ class LoggerMixin(object):
 
         super(LoggerMixin, self).__init__(*args, **kwargs)  # type: ignore  # Too many arguments - it's fine...
 
-        self._reconnect_logger(logger)
+        self.attach_logger(logger)
 
-    def _reconnect_logger(self, logger):
+    def attach_logger(self, logger):
         # type: (ContextAdapter) -> None
+        """
+        Initialize this object's logging methods to those provided by a given ``logger``.
+        """
 
         self.logger = logger
 
