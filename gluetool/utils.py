@@ -147,7 +147,7 @@ def normalize_bool_option(option_value):
        --disable-foo
     """
 
-    if six.text_type(option_value).strip().lower() in ('yes', 'true', '1', 'y', 'on'):
+    if ensure_str(six.text_type(option_value)).strip().lower() in ('yes', 'true', '1', 'y', 'on'):
         return True
 
     return False
@@ -186,7 +186,7 @@ def normalize_multistring_option(option_value, separator=','):
     # If the value is string, convert it to list - it comes from a config file,
     # command-line parsing always produces a list. This reduces config file values
     # to the same structure command-line produces.
-    values = [option_value] if isinstance(option_value, six.text_type) else option_value
+    values = [option_value] if isinstance(option_value, six.string_types) else option_value
 
     # Now deal with possibly multiple paths, separated by comma and some white space, inside
     # every item of the list. Split the paths in the item by the given separator, strip the
@@ -227,7 +227,7 @@ def normalize_shell_option(option_value):
     # If the value is string, convert it to list - it comes from a config file,
     # command-line parsing always produces a list. This reduces config file values
     # to the same structure command-line produces.
-    values = [option_value] if isinstance(option_value, six.text_type) else option_value
+    values = [option_value] if isinstance(option_value, six.string_types) else option_value
 
     # Now split each item using shlex, and merge these lists into a single one.
     return sum([
@@ -1083,7 +1083,7 @@ def _json_byteify(data, ignore_dicts=False):
     # type: (Any, Optional[bool]) -> Any
 
     # if this is a unicode string, return it
-    if isinstance(data, six.text_type):
+    if isinstance(data, six.string_stypes):
         return data
 
     # if this is a list of values, return list of byteified values
@@ -1206,7 +1206,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     def _render_template(s):
         # type: (Union[str, List[str]]) -> Union[str, List[str]]
 
-        if isinstance(s, six.text_type):
+        if isinstance(s, six.string_types):
             return render_template(s, logger=logger, **context)
 
         if isinstance(s, list):
@@ -1413,13 +1413,13 @@ class PatternMap(LoggerMixin, object):
             # Given how YAML works, `pattern` is a string, but the type of `_render_template` return value
             # is Union[str, List[str]] - this covers possible lists on the right side of the equation.
             # To make mypy happy, let's collapse type of `pattern`.
-            assert isinstance(pattern, six.text_type)
+            assert isinstance(pattern, six.string_types)
 
             log_dict(logger.debug,  # type: ignore  # logger.debug signature is compatible
                      "rendered mapping '{}'".format(pattern),
                      converter_chains)
 
-            if isinstance(converter_chains, six.text_type):
+            if isinstance(converter_chains, six.string_types):
                 converter_chains = [converter_chains]
 
             try:

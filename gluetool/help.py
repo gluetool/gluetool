@@ -388,7 +388,7 @@ def function_help(func, name=None):
             args.append(C_ARGNAME(arg))
 
         else:
-            if isinstance(default, six.text_type):
+            if isinstance(default, six.string_types):
                 default = "'{}'".format(default)
 
             args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(cast(str, default))))

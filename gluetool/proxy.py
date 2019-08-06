@@ -20,7 +20,7 @@ class Proxy(object):
     with your own methods.
     """
 
-    __slots__ = ["_obj", "__weakref__"]
+    __slots__ = ["_obj"]
 
     def __init__(self, obj):
         object.__setattr__(self, "_obj", obj)
