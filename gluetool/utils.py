@@ -1083,7 +1083,7 @@ def _json_byteify(data, ignore_dicts=False):
     # type: (Any, Optional[bool]) -> Any
 
     # if this is a unicode string, return it
-    if isinstance(data, six.string_stypes):
+    if isinstance(data, six.string_types):
         return data
 
     # if this is a list of values, return list of byteified values
