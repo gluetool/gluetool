@@ -239,14 +239,17 @@ class Gluetool(object):
             # Don't trust anyone, the exception might have occured inside logging code, therefore
             # resorting to plain print.
 
-            print(file=sys.stderr)
-            print('!!! While handling an exception, another one appeared !!!', file=sys.stderr)
-            print(file=sys.stderr)
-            print('Will try to submit it to Sentry but giving up on everything else.', file=sys.stderr)
+            err_print = functools.partial(print, file=sys.stderr)
+
+            err_print("""
+!!! While handling an exception, another one appeared !!!
+
+Will try to submit it to Sentry but giving up on everything else.
+""")
 
             try:
                 # pylint: disable=protected-access
-                print(gluetool.log.LoggingFormatter._format_exception_chain(sys.exc_info()), file=sys.stderr)
+                err_print(gluetool.log.LoggingFormatter._format_exception_chain(sys.exc_info()))
 
                 # Anyway, try to submit this exception to Sentry, but be prepared for failure in case the original
                 # exception was raised right in Sentry-related code.
@@ -257,11 +260,10 @@ class Gluetool(object):
             except Exception:
                 # tripple error \o/
 
-                print(file=sys.stderr)
-                # pylint: disable=line-too-long
-                print('!!! While submitting an exception to the Sentry, another exception appeared !!!', file=sys.stderr)
-                print(sys.stderr, '    Giving up on everything...', file=sys.stderr)
-                print(sys.stderr, file=sys.stderr)
+                err_print("""
+!!! While submitting an exception to the Sentry, yet another exception appeared !!!
+    Giving up on everything...
+""")
 
                 traceback.print_exc()
 
