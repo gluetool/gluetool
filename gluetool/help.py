@@ -107,7 +107,7 @@ def C_LITERAL(text):
 _original_TextTranslator = sphinx.writers.text.TextTranslator
 
 
-# ##pylint: disable=abstract-method
+# pylint: disable=abstract-method
 class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no type info in TextTranslator
     # literals, ``foo``
     def visit_literal(self, node):
@@ -227,8 +227,8 @@ def rst_to_text(text):
     """
     Render given text, written with RST, as plain text.
 
-    :param text text: string to render.
-    :rtype: text
+    :param str text: string to render.
+    :rtype: str
     :returns: plain text representation of ``text``.
     """
 
@@ -333,7 +333,7 @@ def option_help(txt):
     Options can provide a single line of text, or mutiple lines (using triple
     quotes and docstring-like indentation).
 
-    :param text txt: Raw option help text.
+    :param str txt: Raw option help text.
     :returns: Formatted option help text.
     """
 
@@ -354,7 +354,7 @@ def function_help(func, name=None):
     the function.
 
     :param callable func: Function to generate help for.
-    :param text name: If not set, ``func.__name__`` is used by default.
+    :param str name: If not set, ``func.__name__`` is used by default.
     :returns: ``(signature, body)`` pair.
     """
 
@@ -407,9 +407,9 @@ def functions_help(functions):
     """
     Generate help for a set of functions.
 
-    :param list(text, callable) functions: Functions to generate help for, passed as name
+    :param list(str, callable) functions: Functions to generate help for, passed as name
         and the corresponding callable pairs.
-    :rtype: text
+    :rtype: str
     :returns: Formatted help.
     """
 
