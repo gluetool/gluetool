@@ -31,7 +31,7 @@ The actual names of these variables can be changed when creating an instance of
 import os
 
 import raven
-from six import ensure_str, iteritems
+from six import iteritems
 
 import gluetool
 import gluetool.log
@@ -131,7 +131,7 @@ class Sentry(object):
         if not self._base_url:
             return None
 
-        return ensure_str(gluetool.utils.treat_url('{}/?query={}'.format(self._base_url, event_id), logger=logger))
+        return gluetool.utils.treat_url('{}/?query={}'.format(self._base_url, event_id), logger=logger)
 
     @staticmethod
     def log_issue(failure, logger=None):

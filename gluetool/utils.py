@@ -935,7 +935,7 @@ def treat_url(url, logger=None):
     if norm_url is None:
         raise GlueError("'{}' does not look like an URL".format(url))
 
-    return cast(str, norm_url.strip())
+    return ensure_str(norm_url.strip())
 
 
 def render_template(template, logger=None, **kwargs):
