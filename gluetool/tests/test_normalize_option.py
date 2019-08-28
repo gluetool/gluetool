@@ -9,7 +9,7 @@ from gluetool.utils import normalize_bool_option, normalize_multistring_option, 
 
 def all_casings(input_string):
     if not input_string:
-        yield ""
+        yield u''
 
     else:
         first = input_string[:1]
@@ -21,16 +21,16 @@ def all_casings(input_string):
 # all of these are expected to evaluate to ``True``
 POSITIVE_BOOLEAM_OPTIONS = [
     True] \
-    + list(all_casings('yes')) \
-    + list(all_casings('true')) \
-    + ['1'] \
-    + ['y', 'Y'] \
-    + list(all_casings('on'))
+    + list(all_casings(u'yes')) \
+    + list(all_casings(u'true')) \
+    + [u'1'] \
+    + [u'y', u'Y'] \
+    + list(all_casings(u'on'))
 
 
 # test not just values, but also check it works when they are wrapped by some whitespace
 @pytest.mark.parametrize('value',
-                         POSITIVE_BOOLEAM_OPTIONS + ['\t {}\t '.format(value) for value in POSITIVE_BOOLEAM_OPTIONS])
+                         POSITIVE_BOOLEAM_OPTIONS + [u'\t {}\t '.format(value) for value in POSITIVE_BOOLEAM_OPTIONS])
 def test_normalize_bool_positive(value):
     assert normalize_bool_option(value) is True
 
@@ -52,7 +52,7 @@ def test_normalize_multistring_none():
 
 
 def test_normalize_multistring_string():
-    assert normalize_multistring_option('foo') == ['foo']
+    assert normalize_multistring_option(u'foo') == [u'foo']
 
 
 # For sake of simplicity, use ASCII lowercase, add comma to get "foo,bar" for free, letting
@@ -84,12 +84,12 @@ def test_normalize_path_option(value):
 
 @pytest.mark.parametrize('option_value, expected', (
     (
-        '--foo --bar',
-        ['--foo', '--bar']
+        u'--foo --bar',
+        [u'--foo', u'--bar']
     ),
     (
-        ['--foo --bar', '--baz="abc def"', '--foo abc\\ def'],
-        ['--foo', '--bar', '--baz=abc def', '--foo', 'abc def']
+        [u'--foo --bar', u'--baz="abc def"', u'--foo abc\\ def'],
+        [u'--foo', u'--bar', u'--baz=abc def', u'--foo', u'abc def']
     )
 ))
 def test_normalize_shell_option(option_value, expected):

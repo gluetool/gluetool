@@ -37,6 +37,7 @@ if __name__ == '__main__':
               'colorama==0.3.9',
               'docutils==0.14',
               'enum34==1.1.6',
+              'future==0.16.0',
               'Jinja2==2.10',
               'lxml==4.2.4',
               'mock==3.0.5',
@@ -47,14 +48,15 @@ if __name__ == '__main__':
               'requests-toolbelt==0.8.0',
               # since 0.15.52, it returns ordereddict instead of pure dicts, making format_dict unhappy
               'ruamel.yaml==0.15.51',
-              'six==1.12.0',
               # newer versions bring way too many incompabilities, needs deeper inspection
+              # 'ruamel.yaml==0.15.34',
+              'six==1.12.0',
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',
               'typing==3.6.6',
               'typing-extensions==3.6.6',
-              'urlnorm==1.1.4'
+              'urlnormalizer==1.2.0'
           ],
           description='Python framework for constructing command-line pipelines',
           # pylint: disable=line-too-long
@@ -72,6 +74,7 @@ if __name__ == '__main__':
               'License :: OSI Approved :: BSD License',
               'Operating System :: POSIX :: Linux',
               'Programming Language :: Python :: 2.7',
+              'Programming Language :: Python :: 3.6',
               'Programming Language :: Python :: Implementation :: CPython',
               'Topic :: Software Development :: Libraries :: Application Frameworks',
               'Topic :: Utilities'

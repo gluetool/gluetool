@@ -2,18 +2,20 @@
 
 import argparse
 import collections
-import ConfigParser
+import ast
+import enum
 import imp
 import inspect
 import logging
 import os
 import sys
 import warnings
-import ast
 
 from functools import partial
 
-import enum
+from six import iterkeys, itervalues, iteritems, ensure_str
+from six.moves import configparser
+
 import jinja2
 import mock
 import pkg_resources
@@ -32,6 +34,7 @@ from .log import LoggingFunctionType, ExceptionInfoType  # noqa
 
 if TYPE_CHECKING:
     import gluetool.color  # noqa
+    # pylint: disable=cyclic-import
     import gluetool.utils  # noqa
 
 # Type definitions
@@ -49,11 +52,21 @@ DEFAULT_DATA_PATH = '{}/data'.format(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_MODULE_ENTRY_POINTS = [
     'gluetool.modules'
-]
+]  # type: List[str]
 
 DEFAULT_MODULE_PATHS = [
     '{}/gluetool_modules'.format(sys.prefix)
-]
+]  # type: List[str]
+
+
+# Install workarounds from Six - this makes templates compatible with both Python 2 and 3 when it comes
+# to iterating over dictionaries.
+jinja2.defaults.DEFAULT_NAMESPACE.update({
+    'iteritems': iteritems,
+    'iterkeys': iterkeys,
+    'itervalues': itervalues
+})
+
 
 #
 # NOTE: pipelines and shared functions.
@@ -933,7 +946,7 @@ class Configurable(LoggerMixin, object):
 
         # Sort options by their names - no code has a strong option on their order, so force
         # one to all users of this helper.
-        option_names = sorted(options.keys(), key=lambda x: x[1] if isinstance(x, tuple) else x)
+        option_names = sorted(iterkeys(options), key=lambda x: x[1] if isinstance(x, tuple) else x)
 
         for names in option_names:
             params = options[names]
@@ -1027,7 +1040,7 @@ class Configurable(LoggerMixin, object):
 
         log_dict(self.debug, 'Loading configuration from following paths', paths)
 
-        parser = ConfigParser.ConfigParser()
+        parser = configparser.ConfigParser()
         parsed_paths = parser.read(paths)
 
         log_dict(self.debug, 'Read configuration files', parsed_paths)
@@ -1040,7 +1053,7 @@ class Configurable(LoggerMixin, object):
             try:
                 value = parser.get('default', name)
 
-            except (ConfigParser.NoOptionError, ConfigParser.NoSectionError):
+            except (configparser.NoOptionError, configparser.NoSectionError):
                 return
 
             if 'type' in params:
@@ -1048,8 +1061,13 @@ class Configurable(LoggerMixin, object):
                     value = params['type'](value)
 
                 except ValueError as exc:
-                    raise GlueError("Value of option '{}' expected to be '{}' but cannot be parsed: '{}'".format(
-                        name, params['type'].__name__, exc.message))
+                    raise GlueError(
+                        "Value of option '{}' expected to be '{}' but cannot be parsed: '{}'".format(
+                            name,
+                            params['type'].__name__,
+                            str(exc)
+                        )
+                    )
 
             self._config[name] = value
             self.debug("Option '{}' set to '{}' by config file".format(name, value))  # pylint: disable=not-callable
@@ -1516,11 +1534,15 @@ class Module(Configurable):
 
             functions.append((name, getattr(self, name)))
 
-        return jinja2.Template(trim_docstring("""
+        return ensure_str(
+            jinja2.Template(
+                trim_docstring("""
         {{ '** Shared functions **' | style(fg='yellow') }}
 
         {{ FUNCTIONS }}
-        """)).render(FUNCTIONS=functions_help(functions)).encode('ascii')
+                """)
+            ).render(FUNCTIONS=functions_help(functions))
+        )
 
     def parse_args(self, args):
         # type: (Any) -> None
@@ -2231,6 +2253,7 @@ class Glue(Configurable):
 
         except GlueError as exc:
             self.warn("ignoring file '{}': {}".format(filepath, exc))
+
             return
 
         # Try to import the file.
@@ -2239,6 +2262,7 @@ class Glue(Configurable):
 
         except GlueError as exc:
             self.warn("ignoring file '{}': {}".format(filepath, exc))
+
             return
 
         return pm
@@ -2313,6 +2337,8 @@ class Glue(Configurable):
 
         for ep_entry in pkg_resources.iter_entry_points(entry_point):
             klass = ep_entry.load()
+
+            assert ep_entry.dist is not None
 
             self._register_module(registry, getattr(klass, 'group', ''), klass, ep_entry.dist.location)
 
@@ -2538,7 +2564,7 @@ class Glue(Configurable):
 
         groups = collections.defaultdict(dict)  # type: Dict[str, ModuleRegistryType]
 
-        for name, module_info in modules.iteritems():
+        for name, module_info in iteritems(modules):
             groups[module_info.group][name] = module_info
 
         return groups
@@ -2587,7 +2613,7 @@ class Glue(Configurable):
                 ''
             ]
 
-            for group_name, group in sorted(as_groups.iteritems()):
+            for group_name, group in sorted(iteritems(as_groups)):
                 # skip groups that are not in the list
                 # note that groups is None if all groups should be shown
                 if groups and group_name not in groups:
@@ -2599,7 +2625,7 @@ class Glue(Configurable):
                     _add_no_modules()
                     continue
 
-                for module_name, module in sorted(group.iteritems()):
+                for module_name, module in sorted(iteritems(group)):
                     # Indent module name by 4 spaces, and reserve 32 characters for each module name,
                     # starting all descriptions at the same offset.
                     descriptions.append('    {:32} {}'.format(module_name, module.klass.description))

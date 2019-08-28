@@ -31,6 +31,7 @@ The actual names of these variables can be changed when creating an instance of
 import os
 
 import raven
+from six import iteritems
 
 import gluetool
 import gluetool.log
@@ -77,7 +78,9 @@ class Sentry(object):
                     self._tag_map[env_var.strip()] = tag.strip()
 
             except ValueError:
-                raise gluetool.GlueError('Cannot parse content of {} environment variable'.format(tags_map_env_var))
+                raise gluetool.glue.GlueError(
+                    'Cannot parse content of {} environment variable'.format(tags_map_env_var)
+                )
 
         if not dsn_env_var:
             return
@@ -93,7 +96,7 @@ class Sentry(object):
         context = {}
 
         # env variables
-        for name, value in os.environ.iteritems():
+        for name, value in iteritems(os.environ):
             context['env.{}'.format(name)] = value
 
         self._client.extra_context(context)
@@ -132,7 +135,7 @@ class Sentry(object):
 
     @staticmethod
     def log_issue(failure, logger=None):
-        # type: (Optional[gluetool.Failure], Optional[gluetool.log.ContextAdapter]) -> None
+        # type: (Optional[gluetool.glue.Failure], Optional[gluetool.log.ContextAdapter]) -> None
 
         """
         Nicely log issue and possibly its URL.
@@ -150,7 +153,7 @@ class Sentry(object):
             logger.error('See {} for details.'.format(failure.sentry_event_url))
 
     def _capture(self, event_type, logger=None, failure=None, **kwargs):
-        # type: (str, Optional[gluetool.log.ContextAdapter], Optional[gluetool.Failure], **Any) -> str
+        # type: (str, Optional[gluetool.log.ContextAdapter], Optional[gluetool.glue.Failure], **Any) -> str
 
         """
         Prepare common arguments, and then submit the data to the Sentry server.
@@ -166,7 +169,7 @@ class Sentry(object):
         tags = kwargs.pop('tags', {})
         fingerprint = kwargs.pop('fingerprint', ['{{ default }}'])
 
-        for env_var, tag in self._tag_map.iteritems():
+        for env_var, tag in iteritems(self._tag_map):
             if env_var not in os.environ:
                 continue
 
@@ -180,10 +183,10 @@ class Sentry(object):
                 kwargs['exc_info'] = failure.exc_info
 
             if hasattr(failure.exception, 'sentry_fingerprint'):
-                fingerprint = failure.exception.sentry_fingerprint(fingerprint)
+                fingerprint = failure.exception.sentry_fingerprint(fingerprint)  # type: ignore  # has no attribute
 
             if hasattr(failure.exception, 'sentry_tags'):
-                tags = failure.exception.sentry_tags(tags)
+                tags = failure.exception.sentry_tags(tags)  # type: ignore  # has no attribute
 
         assert self._client is not None
         event_id = self._client.capture(event_type, tags=tags, fingerprint=fingerprint, **kwargs)  # type: str
@@ -197,7 +200,7 @@ class Sentry(object):
         return event_id
 
     def submit_exception(self, failure, logger=None, **kwargs):
-        # type: (gluetool.Failure, Optional[gluetool.log.ContextAdapter], **Any) -> Optional[str]
+        # type: (gluetool.glue.Failure, Optional[gluetool.log.ContextAdapter], **Any) -> Optional[str]
 
         """
         Submits an exception to the Sentry server. Exceptions are usually submitted
@@ -217,7 +220,7 @@ class Sentry(object):
         exc = failure.exception
         if exc and not getattr(exc, 'submit_to_sentry', True):
             if logger:
-                logger.warn('As requested, exception {} not submitted to Sentry'.format(exc.__class__.__name__))
+                logger.warning('As requested, exception {} not submitted to Sentry'.format(exc.__class__.__name__))
 
             return None
 

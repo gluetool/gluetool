@@ -4,6 +4,7 @@ import inspect
 import pytest
 
 from mock import MagicMock
+from six import PY2
 
 import gluetool
 
@@ -137,7 +138,7 @@ def test_for_each_module_exception(pipeline, module, broken_module):
     ret = pipeline._for_each_module(modules, lambda mod: mod.execute())
 
     assert isinstance(ret, gluetool.Failure)
-    assert ret.exception.message == 'bar'
+    assert str(ret.exception) == 'bar'
 
 
 def test_pipeline_setup(pipeline):
@@ -206,9 +207,9 @@ def _test_add_shared(glue, pipeline, monkeypatch, module_klass):
         # And it should be foo of our dummy module class, i.e. foo's im_class member, as reported by
         # inspect, should be the DummyModule class. So, filter value of im_class member into a separate
         # list, and DummyModule should be its first (and only) member.
-        assert [
-            member[1] for member in inspect.getmembers(glue.get_shared('foo'), inspect.isclass) if member[0] == 'im_class'
-        ].index(module_klass) == 0
+        method = glue.get_shared('foo')
+
+        assert method.__self__.__class__ is module_klass
 
         return original_destroy(failure=failure)
 

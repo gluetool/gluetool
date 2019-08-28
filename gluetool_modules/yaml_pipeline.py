@@ -1,8 +1,10 @@
 import argparse
 import functools
+import itertools
 import os
 
 import jinja2
+from six import iterkeys, iteritems
 
 import gluetool
 import gluetool.glue
@@ -78,7 +80,7 @@ class YAMLPipeline(gluetool.Module):
     """
 
     name = 'yaml-pipeline'
-    desc = 'Runs pipeline, described by a given YAML file.'
+    description = 'Runs pipeline, described by a given YAML file.'
 
     options = {
         'description': {
@@ -107,7 +109,7 @@ class YAMLPipeline(gluetool.Module):
         # Also, find required options/
         required_options = []
 
-        for name, properties in self.pipeline['options'].iteritems():
+        for name, properties in iteritems(self.pipeline['options']):
             if 'required' in properties:
                 if properties['required'] is True:
                     required_options.append(name)
@@ -185,7 +187,7 @@ class YAMLPipeline(gluetool.Module):
                     continue
 
             # remaining key is the module name
-            module_name = module.keys()[0]
+            module_name = next(itertools.islice(iterkeys(module), 1))
 
             # empty options
             if module[module_name] is None:
@@ -194,7 +196,7 @@ class YAMLPipeline(gluetool.Module):
 
             module_argv = []
 
-            for option, value in module[module_name].iteritems():
+            for option, value in iteritems(module[module_name]):
                 value = evaluate_value(value)
 
                 if value is None:

@@ -2,6 +2,8 @@ import string
 import types
 
 import pytest
+import six
+
 from mock import MagicMock
 from hypothesis import example, given, strategies as st
 
@@ -14,7 +16,7 @@ def test_message(message):
     with pytest.raises(GlueError) as excinfo:
         raise GlueError(message)
 
-    assert excinfo.value.message == message
+    assert str(excinfo.value) == message
 
 
 # simulate dummy sys.exc_info values, and add the special "no exception" case,
@@ -93,14 +95,18 @@ def test_sentry_tags(current, explicit):
 
 @given(cmd=st.lists(st.text(string.printable)), exit_code=st.integers())
 def test_command_error(cmd, exit_code):
+    stringified = [six.ensure_str(s) for s in cmd]
+
     mock_output = MagicMock(exit_code=exit_code)
 
-    exc = gluetool.GlueCommandError(cmd, mock_output)
+    exc = gluetool.GlueCommandError(stringified, mock_output)
 
     assert isinstance(exc, GlueError)
     assert exc.cmd == cmd
     assert exc.output == mock_output
-    assert exc.message == "Command '{}' failed with exit code {}".format(cmd, exit_code)
+    assert six.ensure_str(six.text_type(exc)) == "Command '{}' failed with exit code {}".format(
+        stringified, exit_code
+    )
 
 
 # Simulate module by a simple integer - it's not touched by Failure, therefore it's quite fine.

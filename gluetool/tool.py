@@ -2,6 +2,8 @@
 Heart of the "gluetool" script. Referred to by setuptools' entry point.
 """
 
+from __future__ import print_function
+
 import functools
 import logging
 import os
@@ -10,18 +12,18 @@ import signal
 import sys
 import traceback
 
+from six import ensure_str, iteritems, iterkeys
+
 import tabulate
 
 import gluetool
 import gluetool.action
 import gluetool.sentry
 
-from gluetool import GlueError, GlueRetryError, Failure
-from gluetool.help import extract_eval_context_info, docstring_to_help
-from gluetool.glue import PipelineStepModule
-from gluetool.log import log_dict
-from gluetool.utils import format_command_line, cached_property, normalize_path, render_template, \
-    normalize_multistring_option
+from .glue import GlueError, GlueRetryError, Failure, PipelineStepModule
+from .help import extract_eval_context_info, docstring_to_help
+from .log import log_dict
+from .utils import format_command_line, cached_property, normalize_path, render_template, normalize_multistring_option
 
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
@@ -80,7 +82,7 @@ class Gluetool(object):
         # pylint: disable=no-self-use
         from .version import __version__
 
-        return cast(str, __version__.strip())
+        return ensure_str(__version__.strip())
 
     @cached_property
     def _command_name(self):
@@ -91,7 +93,6 @@ class Gluetool(object):
 
     def _deduce_pipeline_desc(self, argv, modules):
         # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStepModule]
-
         # pylint: disable=no-self-use
 
         """
@@ -99,7 +100,7 @@ class Gluetool(object):
         by modules and their options.
 
         :param list argv: Remainder of :py:data:`sys.argv` after removing ``gluetool``'s own options.
-        :param list(str) modules: List of known module names.
+        :param list(text) modules: List of known module names.
         :returns: Pipeline description in a form of a list of :py:class:`gluetool.glue.PipelineStepModule` instances.
         """
 
@@ -137,7 +138,7 @@ class Gluetool(object):
         # type: (List[Any], List[gluetool.glue.PipelineStepModule]) -> None
 
         cmdline = [
-            [sys.argv[0]] + argv
+            [ensure_str(sys.argv[0])] + argv
         ]
 
         for step in pipeline_desc:
@@ -168,7 +169,7 @@ class Gluetool(object):
         logging.basicConfig(level=logging.DEBUG)
         logger = logging.getLogger()
 
-        logger.warn('Cannot use custom logger, falling back to a default one')
+        logger.warning('Cannot use custom logger, falling back to a default one')
 
         return logger
 
@@ -238,14 +239,17 @@ class Gluetool(object):
             # Don't trust anyone, the exception might have occured inside logging code, therefore
             # resorting to plain print.
 
-            print >> sys.stderr
-            print >> sys.stderr, '!!! While handling an exception, another one appeared !!!'
-            print >> sys.stderr
-            print >> sys.stderr, 'Will try to submit it to Sentry but giving up on everything else.'
+            err_print = functools.partial(print, file=sys.stderr)
+
+            err_print("""
+!!! While handling an exception, another one appeared !!!
+
+Will try to submit it to Sentry but giving up on everything else.
+""")
 
             try:
                 # pylint: disable=protected-access
-                print >> sys.stderr, gluetool.log.LoggingFormatter._format_exception_chain(sys.exc_info())
+                err_print(gluetool.log.LoggingFormatter._format_exception_chain(sys.exc_info()))
 
                 # Anyway, try to submit this exception to Sentry, but be prepared for failure in case the original
                 # exception was raised right in Sentry-related code.
@@ -256,10 +260,10 @@ class Gluetool(object):
             except Exception:
                 # tripple error \o/
 
-                print >> sys.stderr
-                print >> sys.stderr, '!!! While logging an exception, another exception appeared !!!'
-                print >> sys.stderr, '    Giving up on everything...'
-                print >> sys.stderr
+                err_print("""
+!!! While submitting an exception to the Sentry, yet another exception appeared !!!
+    Giving up on everything...
+""")
 
                 traceback.print_exc()
 
@@ -304,7 +308,7 @@ class Gluetool(object):
         sigusr1_handler = functools.partial(_signal_handler, handler=_sigusr1_handler)
 
         # pylint: disable=invalid-name
-        Glue = self.Glue = gluetool.Glue(tool=self, sentry=self.sentry)
+        Glue = self.Glue = gluetool.glue.Glue(tool=self, sentry=self.sentry)
 
         # Glue is initialized, we can install our logging handlers
         signal.signal(signal.SIGINT, sigint_handler)
@@ -319,7 +323,9 @@ class Gluetool(object):
         Glue.parse_args(sys.argv[1:])
 
         # store tool's configuration - everything till the start of "pipeline" (the first module)
-        self.argv = sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
+        self.argv = [
+            ensure_str(arg) for arg in sys.argv[1:len(sys.argv) - len(Glue.option('pipeline'))]
+        ]
 
         if Glue.option('pid'):
             Glue.info('PID: {} PGID: {}'.format(os.getpid(), os.getpgrp()))
@@ -340,7 +346,7 @@ class Gluetool(object):
         Glue = self.Glue
         assert Glue is not None
 
-        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), Glue.modules.keys())
+        self.pipeline_desc = self._deduce_pipeline_desc(Glue.option('pipeline'), list(iterkeys(Glue.modules)))
         log_dict(Glue.debug, 'pipeline description', self.pipeline_desc)
 
         # list modules
@@ -356,7 +362,7 @@ class Gluetool(object):
         if Glue.option('list-shared'):
             functions = []  # type: List[List[str]]
 
-            for mod_name in sorted(Glue.modules.iterkeys()):
+            for mod_name in sorted(iterkeys(Glue.modules)):
                 functions += [
                     [func_name, mod_name] for func_name in Glue.modules[mod_name].klass.shared_functions
                 ]
@@ -381,12 +387,12 @@ class Gluetool(object):
 
                 info = extract_eval_context_info(source)
 
-                for name, description in info.iteritems():
+                for name, description in iteritems(info):
                     variables.append([
                         name, source.name, docstring_to_help(description, line_prefix='')
                     ])
 
-            for mod_name in sorted(Glue.modules.iterkeys()):
+            for mod_name in sorted(iterkeys(Glue.modules)):
                 _add_variables(Glue.init_module(mod_name))
 
             _add_variables(Glue)
@@ -399,11 +405,11 @@ class Gluetool(object):
 
             table = tabulate.tabulate(variables, ['Variable', 'Module name', 'Description'], tablefmt='simple')
 
-            print render_template("""
+            print(render_template("""
 {{ '** Variables available in eval context **' | style(fg='yellow') }}
 
 {{ TABLE }}
-            """, TABLE=table)
+            """, TABLE=table))
 
             sys.exit(0)
 
@@ -431,7 +437,7 @@ class Gluetool(object):
         for loop_number in range(retries + 1):
             # Print retry info
             if loop_number:
-                Glue.warn('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
+                Glue.warning('retrying execution (attempt #{} out of {})'.format(loop_number, retries))
 
             # Run the pipeline
             failure, destroy_failure = Glue.run_modules(self.pipeline_desc)
@@ -456,7 +462,7 @@ class Gluetool(object):
         failure, destroy_failure = self.run_pipeline()
 
         if destroy_failure:
-            self._exit_logger.warn('Exception raised when destroying modules, overriding exit status')
+            self._exit_logger.warning('Exception raised when destroying modules, overriding exit status')
 
             self._handle_failure(destroy_failure)
 

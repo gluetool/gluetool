@@ -7,6 +7,7 @@ import imp
 
 import astroid
 import pylint.utils
+import six
 
 from .option_default import register_checkers as register_option_default
 from .shared_defined import register_checkers as register_shared_defined
@@ -77,10 +78,10 @@ class OptionsGatherer(object):
 
         # Fill it with the module data by executing the module AST node withing the context
         # of our placeholder's namespace.
-        exec node.root().as_string() in module.__dict__
+        six.exec_(node.root().as_string(), globals=module.__dict__, locals=None)
 
         # Now "evaluate" options structure inside this module, assign it to chosen name...
-        exec '__pylint_options = {}'.format(node.value.as_string()) in module.__dict__
+        six.exec_('__pylint_options = {}'.format(node.value.as_string()), globals=module.__dict__, locals=None)
 
         # ... and now pull the evaluated, Python data structure, out of the module namespace.
         executed_options = module.__dict__['__pylint_options']
@@ -89,7 +90,7 @@ class OptionsGatherer(object):
         # ...
 
         def _add_options(options):
-            for name, params in options.iteritems():
+            for name, params in six.iteritems(options):
                 if isinstance(name, str):
                     self.options[name] = OptionInfo([node], node, params)
 

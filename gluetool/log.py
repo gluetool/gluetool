@@ -45,12 +45,14 @@ import traceback
 
 import jinja2
 import tabulate
+from six import PY2, ensure_str, ensure_binary, iteritems, iterkeys
 
 from .color import Colors
 
 # Type annotations
-# pylint: disable=unused-import, wrong-import-order, line-too-long
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
+# pylint: disable=unused-import,wrong-import-order,line-too-long
+from typing import TYPE_CHECKING, Any, AnyStr, Callable, Dict, Iterable, List, MutableMapping, Optional, Tuple, Type, Union  # noqa
+from typing_extensions import Protocol  # noqa
 from types import TracebackType  # noqa
 from mypy_extensions import Arg, DefaultArg, NamedArg, DefaultNamedArg, VarArg, KwArg  # noqa
 
@@ -96,13 +98,13 @@ _TRACEBACK_TEMPLATE = """
 
 At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
 
-{{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception.message }}
+{{ exception.__class__.__module__ }}.{{ exception.__class__.__name__ }}: {{ exception }}
 
 {% for filepath, lineno, fn, text, frame in stack %}
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
-    Local variables:{% for name in frame.f_locals.iterkeys() | sort %}
+    Local variables:{% for name in iterkeys(frame.f_locals) | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
 {% endfor %}
@@ -196,7 +198,7 @@ class StreamToLogger(object):
 
         for c in buf:
             if ord(c) == ord('\n'):
-                self.log_fn(''.join(self.linebuf))
+                self.log_fn(ensure_str(''.join(self.linebuf)))
                 self.linebuf = []
                 continue
 
@@ -216,7 +218,7 @@ def print_wrapper(log_fn=None, label='print wrapper'):
 
     :param call log_fn: A callback that is called for every line, produced by ``print``.
         If not set, a ``info`` method of ``gluetool`` main logger is used.
-    :param str label: short description, presented in the intro and outro headers, wrapping
+    :param text label: short description, presented in the intro and outro headers, wrapping
         captured output.
     """
 
@@ -239,13 +241,15 @@ def print_wrapper(log_fn=None, label='print wrapper'):
 
 
 def format_blob(blob):
-    # type: (str) -> str
+    # type: (AnyStr) -> str
 
     """
     Format a blob of text for printing. Wraps the text with boundaries to mark its borders.
     """
 
-    return '{}\n{}\n{}'.format(BLOB_HEADER, blob, BLOB_FOOTER)
+    text_blob = ensure_str(blob)
+
+    return '{}\n{}\n{}'.format(BLOB_HEADER, text_blob, BLOB_FOOTER)
 
 
 def format_dict(dictionary):
@@ -279,7 +283,7 @@ def format_table(table, **kwargs):
     :returns: formatted table.
     """
 
-    return cast(str, tabulate.tabulate(table, **kwargs))
+    return tabulate.tabulate(table, **kwargs)
 
 
 def format_xml(element):
@@ -291,7 +295,8 @@ def format_xml(element):
     :param element: XML element to format.
     """
 
-    prettyfied = element.prettify(encoding='utf-8')  # type: str
+    prettyfied = element.prettify()  # type: str
+
     return prettyfied
 
 
@@ -337,7 +342,7 @@ def log_dict(writer, intro, data):
 
 
 def log_blob(writer, intro, blob):
-    # type: (LoggingFunctionType, str, str) -> None
+    # type: (LoggingFunctionType, str, AnyStr) -> None
 
     """
     Log "blob" of characters of unknown structure, e.g. output of a command or response
@@ -469,7 +474,9 @@ class ContextAdapter(logging.LoggerAdapter):
         super(ContextAdapter, self).__init__(logger, extra or {})  # type: ignore  # base class expects just Logger
 
         self._logger = logger
-        self.name = logger.name  # type: str
+
+        if PY2:
+            self.name = logger.name  # type: str
 
     def addHandler(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
@@ -539,7 +546,7 @@ class ContextAdapter(logging.LoggerAdapter):
         # DEBUG log, and use this reference to find corresponding VERBOSE record.
         # Adding time.time() as a salt - tag is based on message hash, it may be
         # logged multiple times, leading to the same tag.
-        tag = hashlib.md5('{}: {}'.format(time.time(), msg)).hexdigest()
+        tag = hashlib.md5(ensure_binary('{}: {}'.format(time.time(), msg))).hexdigest()
 
         # add verbose tag as a context, with very high priority
         extra = extra or {}
@@ -594,7 +601,7 @@ class ContextAdapter(logging.LoggerAdapter):
 
         self.log(logging.WARNING, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
-    warn = warning
+    warn = warning  # type: ignore
 
     # pylint: disable=arguments-differ
     def error(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
@@ -620,7 +627,7 @@ class ModuleAdapter(ContextAdapter):
     # pylint: disable=too-few-public-methods
 
     def __init__(self, logger, module):
-        # type: (ContextAdapter, gluetool.Module) -> None
+        # type: (ContextAdapter, gluetool.glue.Module) -> None
 
         super(ModuleAdapter, self).__init__(logger, {'ctx_module_name': (10, module.unique_name)})
 
@@ -731,7 +738,9 @@ class LoggingFormatter(logging.Formatter):
 
             stack = _extract_stack(trace)
 
-            output.append(tmpl.render(label=label, exception=exc, stack=stack).encode('ascii'))
+            output.append(
+                ensure_str(tmpl.render(label=label, exception=exc, stack=stack, iterkeys=iterkeys))
+            )
 
         # This is the most recent exception, we start with this one - it's often the one most visible,
         # exceptions that caused it are usualy hidden from user's sight.
@@ -763,7 +772,7 @@ class LoggingFormatter(logging.Formatter):
             'stamp': self.formatTime(record, datefmt='%H:%M:%S'),
             'level': LoggingFormatter._level_tags[record.levelno],
             'msg': record.getMessage()
-        }
+        }  # type: Dict[str, str]
 
         handler_logs_traceback = self.log_tracebacks is True \
             or (Logging.stderr_handler is not None and Logging.stderr_handler.level in (logging.DEBUG, VERBOSE))
@@ -841,7 +850,7 @@ class JSONLoggingFormatter(logging.Formatter):
             # type: (Optional[BaseException], Optional[TracebackType]) -> None
 
             if exc:
-                exc_module, exc_class, exc_message = exc.__class__.__module__, exc.__class__.__name__, exc.message
+                exc_module, exc_class, exc_message = exc.__class__.__module__, exc.__class__.__name__, str(exc)
 
             else:
                 exc_module, exc_class, exc_message = '', '', ''
@@ -863,7 +872,7 @@ class JSONLoggingFormatter(logging.Formatter):
                             local_var_name: {
                                 'type': type(local_var_value),
                                 'value': local_var_value
-                            } for local_var_name, local_var_value in frame.f_locals.iteritems()
+                            } for local_var_name, local_var_value in iteritems(frame.f_locals)
                         }
                     }
                     for filename, lineno, fnname, text, frame in stack
@@ -873,7 +882,7 @@ class JSONLoggingFormatter(logging.Formatter):
         _add_cause(exc_info[1], exc_info[2])
 
         while exc_info[1] and getattr(exc_info[1], 'caused_by', None) is not None:
-            exc_info = exc_info[1].caused_by
+            exc_info = exc_info[1].caused_by  # type: ignore  # it *does* have `caused_by` attribute
 
             _add_cause(exc_info[1], exc_info[2])
 
@@ -898,7 +907,7 @@ class JSONLoggingFormatter(logging.Formatter):
         if record.exc_info:
             JSONLoggingFormatter._format_exception_chain(serialized, record.exc_info)
 
-        return format_dict(serialized)
+        return ensure_str(format_dict(serialized))
 
 
 class Logging(object):
@@ -1117,7 +1126,7 @@ class Logging(object):
             Logging.logger = logging.getLogger('gluetool')
 
             # setup all loggers we're interested in
-            map(Logging.configure_logger, Logging.OUR_LOGGERS)
+            list(map(Logging.configure_logger, Logging.OUR_LOGGERS))
 
         # set formatter
         Logging.stderr_handler.setFormatter(LoggingFormatter())
@@ -1154,16 +1163,16 @@ class Logging(object):
         # Enable Sentry
         Logging.enable_logger_sentry(logger)
 
-        map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS)
+        list(map(Logging.enable_logger_sentry, Logging.OUR_LOGGERS))
 
         # Enable debug and verbose files
         Logging.enable_debug_file(logger)
         Logging.enable_verbose_file(logger)
         Logging.enable_json_file(logger)
 
-        map(Logging.enable_debug_file, Logging.OUR_LOGGERS)
-        map(Logging.enable_verbose_file, Logging.OUR_LOGGERS)
-        map(Logging.enable_json_file, Logging.OUR_LOGGERS)
+        list(map(Logging.enable_debug_file, Logging.OUR_LOGGERS))
+        list(map(Logging.enable_verbose_file, Logging.OUR_LOGGERS))
+        list(map(Logging.enable_json_file, Logging.OUR_LOGGERS))
 
         return logger
 

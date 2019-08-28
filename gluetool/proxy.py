@@ -5,6 +5,10 @@ Proxying object wrapper.
 # Proxy class comes from the AS recipe
 # http://code.activestate.com/recipes/496741-object-proxying/
 
+from builtins import object
+
+import six
+
 
 class Proxy(object):
     # pylint: disable=too-few-public-methods
@@ -16,7 +20,7 @@ class Proxy(object):
     with your own methods.
     """
 
-    __slots__ = ["_obj", "__weakref__"]
+    __slots__ = ["_obj"]
 
     def __init__(self, obj):
         object.__setattr__(self, "_obj", obj)
@@ -33,7 +37,7 @@ class Proxy(object):
     def __setattr__(self, name, value):
         setattr(object.__getattribute__(self, "_obj"), name, value)
 
-    def __nonzero__(self):
+    def __bool__(self):
         return bool(object.__getattribute__(self, "_obj"))
 
     def __str__(self):
@@ -41,6 +45,12 @@ class Proxy(object):
 
     def __repr__(self):
         return repr(object.__getattribute__(self, "_obj"))
+
+    #
+    # Handle Python 2's __nonzero__
+    #
+    if six.PY2:
+        __nonzero__ = __bool__
 
     #
     # factories

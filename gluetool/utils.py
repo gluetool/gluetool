@@ -8,36 +8,40 @@ import collections
 import contextlib
 import errno
 import functools
-import httplib
+import io
 import json
 import os
-import pipes
 import re
 import shlex
 import subprocess
 import sys
 import threading
 import time
-import urllib2
 import warnings
 
 import bs4
-import urlnorm
+import urlnormalizer
 import jinja2
 import requests as original_requests
+
+# Python 2/3 compatibility
+import six
+from six import PY2, ensure_str, iteritems, iterkeys
+from six.moves import http_client, urllib
 
 # Don't know why pylint reports "Relative import 'ruamel.yaml', should be 'gluetool.ruamel.yaml'" :(
 # pylint: disable=relative-import
 import ruamel.yaml
 
-from gluetool import GlueError, SoftGlueError, GlueCommandError
+from .glue import GlueError, SoftGlueError, GlueCommandError
 from .result import Result
 from .log import Logging, ContextAdapter, PackageAdapter, LoggerMixin, BlobLogger, \
     log_blob, log_dict, print_wrapper
 
 # Type annotations
 # pylint: disable=unused-import, wrong-import-order
-from typing import TYPE_CHECKING, cast, Any, Callable, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
+from typing import TYPE_CHECKING, cast  # noqa
+from typing import Any, Callable, Deque, Dict, List, Optional, Pattern, Tuple, TypeVar, Union  # noqa
 from .log import LoggingFunctionType  # noqa
 
 if TYPE_CHECKING:
@@ -48,15 +52,22 @@ if TYPE_CHECKING:
 T = TypeVar('T')
 
 
-try:
-    # pylint: disable=ungrouped-imports
-    from subprocess import DEVNULL  # type: ignore
-except ImportError:
-    DEVNULL = open(os.devnull, 'wb')
+if PY2:
+    DEVNULL = io.open(os.devnull, 'wb')
+
+else:
+    # In runtime, it is guarder by `PY2`, but Python 2 Pylint still checks it, and there's no `DEVNULL`
+    # in Python 2... Hence disabling `no-name-in-module`.
+    from subprocess import DEVNULL  # pylint: disable=ungrouped-imports,no-name-in-module
+
+
+# Patch urlnormalizer to support file:// scheme.
+if 'file' not in urlnormalizer.normalizer.SCHEMES:
+    urlnormalizer.normalizer.SCHEMES = urlnormalizer.normalizer.SCHEMES + ('file',)
 
 
 def deprecated(func):
-    # type: (Callable) -> Callable
+    # type: (Callable[..., Any]) -> Callable[..., Any]
 
     """
     This is a decorator which can be used to mark functions as deprecated. It will result in a warning being emitted
@@ -180,7 +191,7 @@ def normalize_multistring_option(option_value, separator=','):
     # If the value is string, convert it to list - it comes from a config file,
     # command-line parsing always produces a list. This reduces config file values
     # to the same structure command-line produces.
-    values = [option_value] if isinstance(option_value, str) else option_value
+    values = [option_value] if isinstance(option_value, six.string_types) else option_value
 
     # Now deal with possibly multiple paths, separated by comma and some white space, inside
     # every item of the list. Split the paths in the item by the given separator, strip the
@@ -221,11 +232,12 @@ def normalize_shell_option(option_value):
     # If the value is string, convert it to list - it comes from a config file,
     # command-line parsing always produces a list. This reduces config file values
     # to the same structure command-line produces.
-    values = [option_value] if isinstance(option_value, str) else option_value
+    values = [option_value] if isinstance(option_value, six.string_types) else option_value
 
     # Now split each item using shlex, and merge these lists into a single one.
     return sum([
-        shlex.split(value) for value in values
+        [ensure_str(s) for s in shlex.split(value)]
+        for value in values
     ], [])
 
 
@@ -295,7 +307,7 @@ class WorkerThread(LoggerMixin, threading.Thread):
     """
 
     def __init__(self, logger, fn, fn_args=None, fn_kwargs=None, **kwargs):
-        # type: (ContextAdapter, Callable[..., Any], Optional[Tuple[str, ...]], Optional[Dict[Any, Any]], **Any) -> None
+        # type: (ContextAdapter, Callable[..., Any], Optional[Tuple[Any, ...]], Optional[Dict[str, Any]], **Any) -> None
 
         threading.Thread.__init__(self, **kwargs)
         LoggerMixin.__init__(self, ThreadAdapter(logger, self))
@@ -316,7 +328,7 @@ class WorkerThread(LoggerMixin, threading.Thread):
 
         # pylint: disable=broad-except
         except Exception as e:
-            self.exception('exception raised in worker thread: {}'.format(str(e)))
+            self.error('exception raised in worker thread: {}'.format(e))
             self.result = e
 
         finally:
@@ -338,7 +350,7 @@ class StreamReader(object):
 
         # List would fine as well, however deque is better optimized for
         # FIFO operations, and it provides the same thread safety.
-        self._queue = collections.deque()  # type: collections.deque
+        self._queue = collections.deque()  # type: Deque[Union[None, str]]
         self._content = []  # type: List[str]
 
         def _enqueue():
@@ -381,10 +393,10 @@ class StreamReader(object):
         self._thread.join()
 
     def read(self):
-        # type: () -> Optional[Any]
+        # type: () -> Optional[str]
 
         try:
-            return self._queue.popleft()
+            return cast(str, self._queue.popleft())
 
         except IndexError:
             return None
@@ -471,7 +483,7 @@ class Command(LoggerMixin, object):
         super(Command, self).__init__(logger or Logging.get_logger())
 
         self.executable = executable
-        self.options = options or []
+        self.options = options or []  # type: List[str]
 
         self.use_shell = False
         self.quote_args = False
@@ -510,7 +522,7 @@ class Command(LoggerMixin, object):
         self._stdout, self._stderr = self._process.communicate()
 
     def _communicate_inspect(self, inspect_callback):
-        # type: (Optional[Callable[..., None]]) -> None
+        # type: (Optional[Callable[[Any, Optional[str], bool], None]]) -> None
 
         # Collapse optionals to specific types
         assert self._command is not None
@@ -522,8 +534,8 @@ class Command(LoggerMixin, object):
         p_stderr = StreamReader(self._process.stderr, name='<stderr>')
 
         if inspect_callback is None:
-            def stdout_write(stream, data, flush=False):
-                # type: (Any, Any, bool) -> None
+            def stdout_write(stream, data, flush):
+                # type: (Any, Optional[str], bool) -> None
 
                 # pylint: disable=unused-argument
 
@@ -532,7 +544,7 @@ class Command(LoggerMixin, object):
 
                 # Not suitable for multiple simultaneous commands. Shuffled output will
                 # ruin your day. And night. And few following weeks, full of debugging, as well.
-                sys.stdout.write(data)
+                sys.stdout.write(ensure_str(data))
                 sys.stdout.flush()
 
             inspect_callback = stdout_write
@@ -549,7 +561,7 @@ class Command(LoggerMixin, object):
             # As long as process runs, keep calling callbacks with incoming data
             while True:
                 for stream in inputs:
-                    inspect_callback(stream, stream.read())
+                    inspect_callback(stream, stream.read(), False)
 
                 if self._process.poll() is not None:
                     break
@@ -569,9 +581,9 @@ class Command(LoggerMixin, object):
                     if data in ('', None):
                         break
 
-                    inspect_callback(stream, data)
+                    inspect_callback(stream, data, False)
 
-                inspect_callback(stream, None, flush=True)
+                inspect_callback(stream, None, True)
 
         self._stdout, self._stderr = p_stdout.content, p_stderr.content
 
@@ -614,7 +626,7 @@ class Command(LoggerMixin, object):
             if not isinstance(items, list):
                 raise GlueError('Only list of strings is accepted')
 
-            if not all((isinstance(s, str) for s in items)):
+            if not all((isinstance(s, six.string_types) for s in items)):
                 raise GlueError('Only list of strings is accepted, {} found'.format([(s, type(s)) for s in items]))
 
         _check_types(self.executable)
@@ -668,7 +680,7 @@ class Command(LoggerMixin, object):
 
         except OSError as e:
             if e.errno == errno.ENOENT:
-                raise GlueError("Command '{}' not found".format(self._command[0]))
+                raise GlueError("Command '{}' not found".format(ensure_str(self._command[0])))
 
             raise e
 
@@ -684,7 +696,7 @@ class Command(LoggerMixin, object):
 
 @deprecated
 def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs):
-    # type: (List[str], Optional[ContextAdapter], Optional[bool], Optional[Callable[..., None]], **str) -> ProcessOutput
+    # type: (List[str], Optional[ContextAdapter], bool, Optional[Callable[..., None]], **Any) -> ProcessOutput
 
     # pylint: disable=unused-argument
 
@@ -698,7 +710,7 @@ def run_command(cmd, logger=None, inspect=False, inspect_callback=None, **kwargs
         Use :py:class:`gluetool.utils.Command` instead.
     """
 
-    return Command(cmd, logger=logger).run(**kwargs)  # type: ignore  # keyword args
+    return Command(cmd, logger=logger).run(**kwargs)
 
 
 def check_for_commands(cmds):
@@ -711,7 +723,7 @@ def check_for_commands(cmds):
             Command(['/bin/bash', '-c', 'command -v {}'.format(cmd)]).run(stdout=DEVNULL)
 
         except GlueError:
-            raise GlueError("Command '{}' not found on the system".format(cmd))
+            raise GlueError("Command '{}' not found on the system".format(ensure_str(cmd)))
 
 
 class cached_property(object):
@@ -766,14 +778,26 @@ def format_command_line(cmdline):
     def _format_options(options):
         # type: (List[str]) -> str
 
-        return ' '.join([pipes.quote(opt) for opt in options])
+        # To make code more readable, it's split to multiple lines. First, make sure each option
+        # is "str", accepted by `shlex_quote` function.
+        encoded_options = [ensure_str(opt) for opt in options]
+
+        # Next, quote each option.
+        # shlex_quote takes one argument, pylint thinks otherwise :/
+        # pylint: disable=too-many-function-args
+        quoted_options = [six.moves.shlex_quote(opt) for opt in encoded_options]
+
+        # Finally, convert quoted options back to "text".
+        decoded_options = [ensure_str(opt) for opt in quoted_options]
+
+        return ' '.join(decoded_options)
 
     cmd = [_format_options(cmdline[0])]
 
     for row in cmdline[1:]:
         cmd.append('    ' + _format_options(row))
 
-    return ' \\\n'.join(cmd)
+    return '\n'.join(cmd)
 
 
 @deprecated
@@ -786,11 +810,12 @@ def fetch_url(url, logger=None, success_codes=(200,)):
     Very thin wrapper around urllib. Added value is logging, and converting
     possible errors to :py:class:`gluetool.glue.GlueError` exception.
 
-    :param str url: URL to get.
+    :param url: URL to get.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :param tuple success_codes: tuple of HTTP response codes representing successfull request.
-    :returns: tuple ``(response, content)`` where ``response`` is what :py:func:`urllib2.urlopen`
-      returns, and ``content`` is the payload of the response.
+    :returns: tuple ``(response, content)`` where ``response`` is what
+      :py:func:`requests.get` returns, and ``content`` is the payload
+      of the response.
     """
 
     logger = logger or Logging.get_logger()
@@ -798,18 +823,16 @@ def fetch_url(url, logger=None, success_codes=(200,)):
     logger.debug("opening URL '{}'".format(url))
 
     try:
-        response = urllib2.urlopen(url)
-        code, content = response.getcode(), response.read()
+        with requests(logger=logger) as req:
+            response = req.get(url)
 
-    except urllib2.HTTPError as exc:
+    except urllib.error.HTTPError as exc:
         raise GlueError("Failed to fetch URL '{}': {}".format(url, exc))
 
-    log_blob(logger.debug, '{}: {}'.format(url, code), content)
-
-    if code not in success_codes:
+    if response.status_code not in success_codes:
         raise GlueError("Unsuccessfull response from '{}'".format(url))
 
-    return response, content
+    return response, response.content
 
 
 @contextlib.contextmanager
@@ -844,18 +867,17 @@ def requests(logger=None):
     :returns: :py:mod:`requests` module.
     """
 
-    # Enable httplib debugging. It's being used underneath ``requests`` and ``urllib3``,
+    # Enable http_client debugging. It's being used underneath ``requests`` and ``urllib3``,
     # but it's stupid - uses "print" instead of a logger, therefore we have to capture it
     # and disable debug logging when leaving the context.
     logger = logger or Logging.get_logger()
 
-    httplib_logger = PackageAdapter(logger, 'httplib')
-
-    httplib.HTTPConnection.debuglevel = 1
+    http_client_logger = PackageAdapter(logger, 'httplib') if PY2 else PackageAdapter(logger, 'http_client')
+    http_client.HTTPConnection.debuglevel = 1  # type: ignore
 
     # Start capturing ``print`` statements - they are used to provide debug messages, therefore
     # using ``debug`` level.
-    with print_wrapper(log_fn=httplib_logger.debug):
+    with print_wrapper(log_fn=http_client_logger.debug):  # type: ignore  # logger.debug signature is compatible
         # To log responses and their content, we must take a look at ``Response`` instance
         # returned by several entry methods (``get``, ``post``, ...). To do that, we have
         # a simple wrapper function.
@@ -881,7 +903,7 @@ def requests(logger=None):
         }
 
         # ... and replace them with our wrapper, giving it the original method as the first argument
-        for method_name, original_method in methods.iteritems():
+        for method_name, original_method in iteritems(methods):
             setattr(original_requests, method_name, functools.partial(_verbose_request, original_method))
 
         try:
@@ -889,11 +911,11 @@ def requests(logger=None):
 
         finally:
             # put original methods back...
-            for method_name, original_method in methods.iteritems():
+            for method_name, original_method in iteritems(methods):
                 setattr(original_requests, method_name, original_method)
 
-            # ... and disable httplib debugging
-            httplib.HTTPConnection.debuglevel = 0
+            # ... and disable http_client debugging
+            http_client.HTTPConnection.debuglevel = 0  # type: ignore
 
 
 def treat_url(url, logger=None):
@@ -902,9 +924,10 @@ def treat_url(url, logger=None):
     """
     Remove "weird" artifacts from the given URL. Collapse adjacent '.'s, apply '..', etc.
 
-    :param str url: URL to clear.
+    :param text url: URL to clear.
     :param gluetool.log.ContextAdapter logger: logger to use for logging.
-    :rtype: str
+    :rtype: text
+    :raises: gluetool.glue.GlueError: if URL is invalid
     :returns: Treated URL.
     """
 
@@ -912,22 +935,16 @@ def treat_url(url, logger=None):
 
     logger.debug("treating a URL '{}'".format(url))
 
-    try:
-        url = str(urlnorm.norm(url))
+    norm_url = urlnormalizer.normalize_url(url)
 
-    except urlnorm.InvalidUrl as exc:
-        # urlnorm cannot handle localhost: https://github.com/jehiah/urlnorm/issues/3
-        if exc.message == "host u'localhost' is not valid":
-            pass
+    if norm_url is None:
+        raise GlueError("'{}' does not look like an URL".format(url))
 
-        else:
-            raise exc
-
-    return url.strip()
+    return ensure_str(norm_url.strip())
 
 
 def render_template(template, logger=None, **kwargs):
-    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **str) -> str
+    # type: (Union[str, jinja2.environment.Template], Optional[ContextAdapter], **Any) -> str
 
     """
     Render Jinja2 template. Logs errors, and raises an exception when it's not possible
@@ -936,12 +953,13 @@ def render_template(template, logger=None, **kwargs):
     :param template: Template to render. It can be either :py:class:`jinja2.environment.Template` instance,
         or a string.
     :param dict kwargs: Keyword arguments passed to render process.
-    :rtype: str
     :returns: Rendered template.
     :raises gluetool.glue.GlueError: when the rednering failed.
     """
 
     logger = logger or Logging.get_logger()
+
+    assert logger is not None
 
     try:
         def _render(template, source):
@@ -952,14 +970,14 @@ def render_template(template, logger=None, **kwargs):
             log_blob(logger.debug, 'rendering template', source)
             log_dict(logger.verbose, 'context', kwargs)
 
-            return str(template.render(**kwargs).strip())
+            return ensure_str(template.render(**kwargs).strip())
 
-        if isinstance(template, (str, unicode)):
+        if isinstance(template, six.string_types):
             return _render(jinja2.Template(template), template)
 
         if isinstance(template, jinja2.environment.Template):
             if template.filename != '<template>':  # type: ignore
-                with open(template.filename, 'r') as f:  # type: ignore
+                with io.open(template.filename, 'r', encoding='utf-8') as f:  # type: ignore  # .filename attr exists
                     return _render(template, f.read())
 
             return _render(template, '<unknown template source>')
@@ -1005,7 +1023,7 @@ def load_yaml(filepath, logger=None):
     """
     Load data stored in YAML file, and return their Python representation.
 
-    :param str filepath: Path to a file. ``~`` or ``~<username>`` are expanded before using.
+    :param text filepath: Path to a file. ``~`` or ``~<username>`` are expanded before using.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :rtype: object
     :returns: structures representing data in the file.
@@ -1033,7 +1051,7 @@ def load_yaml(filepath, logger=None):
         return data
 
     except ruamel.yaml.YAMLError as e:
-        raise GlueError("Unable to load YAML file '{}': {}".format(filepath, str(e)))
+        raise GlueError("Unable to load YAML file '{}': {}".format(filepath, e))
 
 
 def dump_yaml(data, filepath, logger=None):
@@ -1043,7 +1061,7 @@ def dump_yaml(data, filepath, logger=None):
     Save data stored in variable to YAML file.
 
     :param object data: Data to store in YAML file
-    :param str filepath: Path to an output file.
+    :param text filepath: Path to an output file.
     :raises gluetool.glue.GlueError: if it was not possible to successfully save data to file.
     """
     if not filepath:
@@ -1063,15 +1081,15 @@ def dump_yaml(data, filepath, logger=None):
             f.flush()
 
     except ruamel.yaml.YAMLError as e:
-        raise GlueError("Unable to save YAML file '{}': {}".format(filepath, str(e)))
+        raise GlueError("Unable to save YAML file '{}': {}".format(filepath, e))
 
 
 def _json_byteify(data, ignore_dicts=False):
     # type: (Any, Optional[bool]) -> Any
 
-    # if this is a unicode string, return its string representation
-    if isinstance(data, unicode):
-        return data.encode('utf-8')
+    # if this is a unicode string, return it
+    if isinstance(data, six.string_types):
+        return data
 
     # if this is a list of values, return list of byteified values
     if isinstance(data, list):
@@ -1082,7 +1100,7 @@ def _json_byteify(data, ignore_dicts=False):
     if isinstance(data, dict) and not ignore_dicts:
         return {
             _json_byteify(key, ignore_dicts=True): _json_byteify(value, ignore_dicts=True)
-            for key, value in data.iteritems()
+            for key, value in iteritems(data)
         }
 
     # if it's anything else, return it in its original form
@@ -1108,7 +1126,7 @@ def load_json(filepath, logger=None):
     """
     Load data stored in JSON file, and return their Python representation.
 
-    :param str filepath: Path to a file. ``~`` or ``~<username>`` are expanded before using.
+    :param text filepath: Path to a file. ``~`` or ``~<username>`` are expanded before using.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :rtype: object
     :returns: structures representing data in the file.
@@ -1135,7 +1153,7 @@ def load_json(filepath, logger=None):
             return data
 
     except Exception as exc:
-        raise GlueError("Unable to load JSON file '{}': {}".format(filepath, str(exc)))
+        raise GlueError("Unable to load JSON file '{}': {}".format(filepath, exc))
 
 
 def _load_yaml_variables(data, enabled=True, logger=None):
@@ -1193,7 +1211,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     def _render_template(s):
         # type: (Union[str, List[str]]) -> Union[str, List[str]]
 
-        if isinstance(s, str):
+        if isinstance(s, six.string_types):
             return render_template(s, logger=logger, **context)
 
         if isinstance(s, list):
@@ -1236,13 +1254,13 @@ class SimplePatternMap(LoggerMixin, object):
 
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
-        self._compiled_map = []  # type: List[Tuple[Pattern, str]]
+        self._compiled_map = []  # type: List[Tuple[Pattern[str], str]]
 
         for pattern_dict in pattern_map:
             if not isinstance(pattern_dict, dict):
                 raise GlueError("Invalid format: '- <pattern>: <result>' expected, '{}' found".format(pattern_dict))
 
-            pattern = pattern_dict.keys()[0]
+            pattern = next(iterkeys(pattern_dict))
             result = pattern_dict[pattern].strip()
 
             # Apply variables if requested.
@@ -1257,7 +1275,7 @@ class SimplePatternMap(LoggerMixin, object):
                 pattern = re.compile(pattern)
 
             except re.error as exc:
-                raise GlueError("Pattern '{}' is not valid: {}".format(pattern, str(exc)))
+                raise GlueError("Pattern '{}' is not valid: {}".format(pattern, exc))
 
             self._compiled_map.append((pattern, result))
 
@@ -1268,7 +1286,7 @@ class SimplePatternMap(LoggerMixin, object):
         Try to match ``s`` by the map. If the match is found - the first one wins - then its
         transformation is applied to the ``s``.
 
-        :rtype: str
+        :rtype: text
         :returns: if matched, output of the corresponding transformation.
         """
 
@@ -1334,7 +1352,7 @@ class PatternMap(LoggerMixin, object):
     There can be multiple converters for a single pattern, resulting in multiple values returned
     when the input string matches the corresponding pattern.
 
-    :param str filepath: Path to a YAML file with map definition.
+    :param text filepath: Path to a YAML file with map definition.
     :param dict spices: apping between `spices` and their `makers`.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :param bool allow_variables: if set, both patterns and converters are first treated as templates,
@@ -1362,10 +1380,10 @@ class PatternMap(LoggerMixin, object):
         _render_template = _load_yaml_variables(pattern_map, enabled=allow_variables, logger=self.logger)
 
         def _create_simple_repl(repl):
-            # type: (str) -> Callable[[Pattern, str], str]
+            # type: (str) -> Callable[[Pattern[str], str], str]
 
             def _replace(pattern, target):
-                # type: (Pattern, str) -> Any
+                # type: (Pattern[str], str) -> Any
 
                 """
                 Use `repl` to construct image from `target`, honoring all backreferences made by `pattern`.
@@ -1378,11 +1396,11 @@ class PatternMap(LoggerMixin, object):
 
                 except re.error as e:
                     raise GlueError("Cannot transform pattern '{}' with target '{}', repl '{}': {}".format(
-                        pattern.pattern, target, repl, str(e)))
+                        pattern.pattern, target, repl, e))
 
             return _replace
 
-        self._compiled_map = []  # type: List[Tuple[Pattern, List[Callable[[Pattern, str], str]]]]
+        self._compiled_map = []  # type: List[Tuple[Pattern[str], List[Callable[[Pattern[str], str], str]]]]
 
         for pattern_dict in pattern_map:
             log_dict(self.debug, 'pattern dict', pattern_dict)
@@ -1391,7 +1409,7 @@ class PatternMap(LoggerMixin, object):
                 raise GlueError("Invalid format: '- <pattern>: <transform>' expected, '{}' found".format(pattern_dict))
 
             # There is always just a single key, the pattern.
-            pattern_key = pattern_dict.keys()[0]
+            pattern_key = next(iterkeys(pattern_dict))
 
             # Apply variables if requested.
             pattern = _render_template(pattern_key)
@@ -1400,20 +1418,20 @@ class PatternMap(LoggerMixin, object):
             # Given how YAML works, `pattern` is a string, but the type of `_render_template` return value
             # is Union[str, List[str]] - this covers possible lists on the right side of the equation.
             # To make mypy happy, let's collapse type of `pattern`.
-            assert isinstance(pattern, str)
+            assert isinstance(pattern, six.string_types)
 
             log_dict(logger.debug,  # type: ignore  # logger.debug signature is compatible
                      "rendered mapping '{}'".format(pattern),
                      converter_chains)
 
-            if isinstance(converter_chains, str):
+            if isinstance(converter_chains, six.string_types):
                 converter_chains = [converter_chains]
 
             try:
                 compiled_pattern = re.compile(pattern)
 
             except re.error as e:
-                raise GlueError("Pattern '{}' is not valid: {}".format(pattern, str(e)))
+                raise GlueError("Pattern '{}' is not valid: {}".format(pattern, e))
 
             compiled_chains = []
 
@@ -1446,7 +1464,7 @@ class PatternMap(LoggerMixin, object):
         the first one is returned. If ``multiple`` is set to ``True``, list of all products
         is returned instead.
 
-        :rtype: str
+        :rtype: text
         :returns: if matched, output of the corresponding transformation.
         """
 
@@ -1487,7 +1505,7 @@ def wait(label, check, timeout=None, tick=30, logger=None):
     """
     Wait for a condition to be true.
 
-    :param str label: printable label used for logging.
+    :param text label: printable label used for logging.
     :param callable check: called to test the condition. It must be of type :py:data:`WaitCheckType`: takes
         no arguments, must return instance of :py:class:`gluetool.Result`. If the result is valid, the condition
         is assumed to pass the check and waiting ends.
@@ -1542,7 +1560,7 @@ def new_xml_element(tag_name, _parent=None, **attrs):
     """
     Create new XML element.
 
-    :param str tag_name: Name of the element.
+    :param text tag_name: Name of the element.
     :param element _parent: If set, the newly created element will be appended to this element.
     :param dict attrs: Attributes to set on the newly created element.
     :returns: Newly created XML element.
@@ -1550,7 +1568,7 @@ def new_xml_element(tag_name, _parent=None, **attrs):
 
     element = bs4.BeautifulSoup('', 'xml').new_tag(tag_name)
 
-    for name, value in attrs.iteritems():
+    for name, value in iteritems(attrs):
         element[name] = value
 
     if _parent is not None:

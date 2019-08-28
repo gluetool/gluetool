@@ -4,6 +4,7 @@
 import json
 
 import ruamel.yaml
+from six import iteritems
 
 import gluetool
 
@@ -70,7 +71,7 @@ class CaplogWrapper(object):
 
     def match(self, matcher=any, **kwargs):
         def _cmp(record):
-            return all(getattr(record, field) == value for field, value in kwargs.iteritems())
+            return all(getattr(record, field) == value for field, value in iteritems(kwargs))
 
         return matcher(_cmp(record) for record in self.records)
 

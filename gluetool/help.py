@@ -12,19 +12,18 @@ import argparse
 import ast
 import inspect
 import os
-import sys
 import textwrap
-
-from functools import partial
 
 import docutils.core
 import docutils.nodes
 import docutils.parsers.rst
 import docutils.writers
-import jinja2
 import sphinx.writers.text
 import sphinx.locale
 import sphinx.util.nodes
+
+import six
+from six import PY2, ensure_str, iteritems
 
 from .color import Colors
 from .log import Logging
@@ -58,6 +57,26 @@ CROP_WIDTH = WIDTH - 10
 sphinx.writers.text.MAXWIDTH = CROP_WIDTH
 
 
+FUNCTIONS_HELP_TEMPLATE = """
+{% for signature, body in FUNCTIONS %}
+  {{ signature }}
+
+{{ body }}
+{% endfor %}
+"""
+
+
+EVAL_CONTEXT_HELP_TEMPLATE = """
+{{ '** Evaluation context **' | style(fg='yellow') }}
+
+{% for name, description in iteritems(CONTEXT) %}
+  * {{ name | style(fg='blue') }}
+
+{{ description | indent(4, true) }}
+{% endfor %}
+"""
+
+
 # Semantic colorizers
 # pylint: disable=invalid-name
 def C_FUNCNAME(text):
@@ -88,6 +107,7 @@ def C_LITERAL(text):
 _original_TextTranslator = sphinx.writers.text.TextTranslator
 
 
+# pylint: disable=abstract-method
 class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no type info in TextTranslator
     # literals, ``foo``
     def visit_literal(self, node):
@@ -132,8 +152,9 @@ class LineWrapRawTextHelpFormatter(argparse.RawDescriptionHelpFormatter):
     def _split_lines(self, text, width):  # type: ignore  # incompatible with super type because of unicode
         # type: (str, int) -> List[str]
 
-        text = self._whitespace_matcher.sub(' ', text).strip()
-        return cast(List[str], textwrap.wrap(text, width))
+        text = ensure_str(self._whitespace_matcher.sub(' ', ensure_str(text)).strip())
+
+        return textwrap.wrap(text, width)
 
 
 #
@@ -211,7 +232,7 @@ def rst_to_text(text):
     :returns: plain text representation of ``text``.
     """
 
-    return cast(str, docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
+    return ensure_str(docutils.core.publish_string(text, writer=sphinx.writers.text.TextWriter(DummyTextBuilder)))
 
 
 def trim_docstring(docstring):
@@ -243,14 +264,14 @@ def trim_docstring(docstring):
     # and split into a list of lines:
     lines = docstring.expandtabs().splitlines()
     # Determine minimum indentation (first line doesn't count):
-    indent = sys.maxint
+    indent = six.MAXSIZE
     for line in lines[1:]:
         stripped = line.lstrip()
         if stripped:
             indent = min(indent, len(line) - len(stripped))
     # Remove indentation (first line is special):
     trimmed = [lines[0].strip()]
-    if indent < sys.maxint:
+    if indent < six.MAXSIZE:
         for line in lines[1:]:
             trimmed.append(line[indent:].rstrip())
     # Strip off trailing and leading blank lines:
@@ -287,12 +308,16 @@ def docstring_to_help(docstring, width=None, line_prefix='    '):
     # For each line - which is actually a paragraph, given the text comes from RST - wrap it
     # to fit inside given line length (a bit shorter, there's a prefix for each line!).
     wrapped_lines = []  # type: List[str]
-    wrap = partial(textwrap.wrap, width=width - len(line_prefix), initial_indent=line_prefix,
-                   subsequent_indent=line_prefix)
 
     for line in processed.splitlines():
         if line:
-            wrapped_lines += cast(List[str], wrap(line))
+            wrapped_lines += textwrap.wrap(
+                line,
+                width=width - len(line_prefix),
+                initial_indent=line_prefix,
+                subsequent_indent=line_prefix
+            )
+
         else:
             # yeah, we could just append empty string but line_prefix could be any string, e.g. 'foo: '
             wrapped_lines.append(line_prefix)
@@ -336,7 +361,13 @@ def function_help(func, name=None):
     name = name or func.__name__
 
     # construct function signature
-    signature = inspect.getargspec(func)
+    # with Python 3 use getfullargspec instead of getargspec
+    if PY2:
+        # pylint: disable=deprecated-method
+        signature = inspect.getargspec(func)
+    else:
+        signature = inspect.getfullargspec(func)  # pylint: disable=no-member
+
     no_default = object()
 
     defaults = []  # type: List[Union[str, object]]
@@ -357,10 +388,10 @@ def function_help(func, name=None):
             args.append(C_ARGNAME(arg))
 
         else:
-            if isinstance(default, str):
+            if isinstance(default, six.string_types):
                 default = "'{}'".format(default)
 
-            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(str(default))))
+            args.append('{}={}'.format(C_ARGNAME(arg), C_LITERAL(cast(str, default))))
 
     return (
         # signature
@@ -382,13 +413,16 @@ def functions_help(functions):
     :returns: Formatted help.
     """
 
-    return jinja2.Template(trim_docstring("""
-    {% for signature, body in FUNCTIONS %}
-      {{ signature }}
+    # pylint: disable=cyclic-import
+    from .utils import render_template
 
-    {{ body }}
-    {% endfor %}
-    """)).render(FUNCTIONS=[function_help(func, name=name) for name, func in functions]).encode('ascii')
+    return render_template(
+        FUNCTIONS_HELP_TEMPLATE,
+        FUNCTIONS=[
+            function_help(func, name=name)
+            for name, func in functions
+        ]
+    )
 
 
 def extract_eval_context_info(source, logger=None):
@@ -415,7 +449,7 @@ def extract_eval_context_info(source, logger=None):
     # Cannot do "source.eval_context" because we'd get the value of property, which
     # is usualy a dict. We cannot let it evaluate and return the value, therefore
     # we must get it via its parent class.
-    eval_context = source.__class__.eval_context  # type: ignore  # operating on Module classes, eval_context exists
+    eval_context = source.__class__.eval_context
 
     # this is not a cyclic import, yet pylint thinks so :/
     # pylint: disable=cyclic-import
@@ -432,13 +466,13 @@ def extract_eval_context_info(source, logger=None):
 
     try:
         # get source code of the actual getter of the ``eval_context`` property
-        getter_source = inspect.getsource(eval_context.fget)
+        getter_source = inspect.getsource(eval_context.fget)  # type: ignore  # the actual property does have `fget`
 
         # it's indented - trim it like a docstring
-        getter_source = trim_docstring(getter_source)
+        getter_source_trimmed = trim_docstring(getter_source)
 
         # now, parse getter source, and create its AST
-        tree = ast.parse(getter_source)
+        tree = ast.parse(getter_source_trimmed)
 
         # find ``__content__ = { ...`` assignment inside the function
         # ``tree`` is the whole module, ``tree.body[0]`` is the function definition
@@ -480,12 +514,12 @@ def extract_eval_context_info(source, logger=None):
         eval(code, {}, module_locals)
 
         return {
-            name: trim_docstring(description) for name, description in module_locals['__content__'].iteritems()
+            name: trim_docstring(description) for name, description in iteritems(module_locals['__content__'])
         }
 
     # pylint: disable=broad-except
     except Exception as exc:
-        logger.warn("Cannot read eval context info from '{}': {}".format(source.name, exc))
+        logger.warning("Cannot read eval context info from '{}': {}".format(source.name, exc))
 
         return {}
 
@@ -501,21 +535,16 @@ def eval_context_help(source):
     :returns: Formatted help.
     """
 
+    # pylint: disable=cyclic-import
+    from .utils import render_template
+
     context_info = extract_eval_context_info(source)
 
     if not context_info:
         return ''
 
     context_content = {
-        name: docstring_to_help(description, line_prefix='') for name, description in context_info.iteritems()
+        name: docstring_to_help(description, line_prefix='') for name, description in iteritems(context_info)
     }
 
-    return jinja2.Template("""
-{{ '** Evaluation context **' | style(fg='yellow') }}
-
-{% for name, description in CONTEXT.iteritems() %}
-  * {{ name | style(fg='blue') }}
-
-{{ description | indent(4, true) }}
-{% endfor %}
-""").render(CONTEXT=context_content).strip().encode('ascii')
+    return render_template(EVAL_CONTEXT_HELP_TEMPLATE, CONTEXT=context_content)

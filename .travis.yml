@@ -2,15 +2,29 @@
 
 language: python
 
-python:
-  - "2.7"
-  - "3.6"
+# Paralellize by telling Travis what our matrix looks like - we reduce the actual command
+# to just calling `tox` with a single environment, specified by `TOX_ENV`, which is set
+# multiple times. Travis will take care of creating necessary threads.
+matrix:
+    include:
+      - python: 2.7
+        env: TOX_ENV=py27-static-analysis
+
+      - python: 2.7
+        env: TOX_ENV=py27-unit-tests
+
+      - python: 3.6
+        env: TOX_ENV=py36-static-analysis
+
+      - python: 3.6
+        env: TOX_ENV=py36-unit-tests
+
+      # For type-check, we need Python 3 to power `mypy`. It's going to check types for both
+      # Python 3 *and* 2, therefore it's perfectly fine to run it just once.
+      - python: 3.6
+        env: TOX_ENV=type-check
 
 install: pip install tox-travis
 
 script:
-  # At this moment, we're not compatible with Python 3 yet, and we need Python 3
-  # to check types. Therefore, unit tests + static analysis cannot be run using
-  # the same interpreter.
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then tox              ; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then tox -e type-check; fi
+  - tox -e $TOX_ENV

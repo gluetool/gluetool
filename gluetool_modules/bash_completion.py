@@ -1,6 +1,9 @@
 import collections
+import sys
 
 import jinja2
+
+from six import iterkeys, iteritems
 
 import gluetool
 import gluetool.utils
@@ -12,7 +15,7 @@ BASH_COMPLETION_TEMPLATE = """
 _{{ GLUE.tool._command_name }}()
 {
     local cur prev
-    local modules {% for module_name in MODULE_OPTIONS.iterkeys() | sort %} {{ module_name | replace('-', '_') }}_opts {% endfor %}
+    local modules {% for module_name in iterkeys(MODULE_OPTIONS) | sort %} {{ module_name | replace('-', '_') }}_opts {% endfor %}
     local index=COMP_CWORD-1
 
     COMPREPLY=()
@@ -26,12 +29,12 @@ _{{ GLUE.tool._command_name }}()
     done
 
     modules="{{ GLUE.modules.keys() | sort | join(' ') }}"
-    {% for module_name, module_options in MODULE_OPTIONS.iteritems() | sort %}
+    {% for module_name, module_options in iteritems(MODULE_OPTIONS) | sort %}
     {{ module_name | replace('-', '_') }}_opts="{{ module_options | sort | join(' ') }}"
     {%- endfor %}
 
     if [[ ${cur} == -* ]] ; then
-        {% for module_name in MODULE_OPTIONS.iterkeys() | sort %}
+        {% for module_name in iterkeys(MODULE_OPTIONS) | sort %}
             if [[ ${prev} == {{ module_name }} ]]; then
                 COMPREPLY=( $(compgen -W "${{ module_name | replace('-', '_') }}_opts" -- ${cur}) )
                 return 0
@@ -45,6 +48,7 @@ _{{ GLUE.tool._command_name }}()
     fi
 }
 complete -F _{{ GLUE.tool._command_name }} {{ GLUE.tool._command_name }}
+
 """
 
 
@@ -87,7 +91,7 @@ class BashCompletion(gluetool.Module):
             Configurable._for_each_option(_add_option, options)
 
         # Inspect all option groups defined by the module, and add every option found
-        for module_name in self.glue.modules.iterkeys():
+        for module_name in iterkeys(self.glue.modules):
             Configurable._for_each_option_group(_add_options_from_group,
                                                 self.glue.modules[module_name]['class'].options)
 
@@ -98,7 +102,8 @@ class BashCompletion(gluetool.Module):
         # add -h and --help to every module - these are added by argparse code to the generated
         # help, here we have to do it on our own
         module_options = {
-            name: options + ['-h', '--help'] for name, options in module_options.iteritems()
+            name: options + ['-h', '--help'] for name, options in iteritems(module_options)
         }
 
-        print jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue, MODULE_OPTIONS=module_options)
+        sys.stdout.write(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue,
+                                                                          MODULE_OPTIONS=module_options))
