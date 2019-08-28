@@ -61,6 +61,11 @@ else:
     from subprocess import DEVNULL  # pylint: disable=ungrouped-imports,no-name-in-module
 
 
+# Patch urlnormalizer to support file:// scheme.
+if 'file' not in urlnormalizer.normalizer.SCHEMES:
+    urlnormalizer.normalizer.SCHEMES = urlnormalizer.normalizer.SCHEMES + ('file',)
+
+
 def deprecated(func):
     # type: (Callable[..., Any]) -> Callable[..., Any]
 
@@ -147,7 +152,7 @@ def normalize_bool_option(option_value):
        --disable-foo
     """
 
-    if ensure_str(six.text_type(option_value)).strip().lower() in ('yes', 'true', '1', 'y', 'on'):
+    if str(option_value).strip().lower() in ('yes', 'true', '1', 'y', 'on'):
         return True
 
     return False
@@ -231,7 +236,7 @@ def normalize_shell_option(option_value):
 
     # Now split each item using shlex, and merge these lists into a single one.
     return sum([
-        [ensure_str(s) for s in shlex.split(ensure_str(value))]
+        [ensure_str(s) for s in shlex.split(value)]
         for value in values
     ], [])
 
@@ -967,7 +972,7 @@ def render_template(template, logger=None, **kwargs):
 
             return ensure_str(template.render(**kwargs).strip())
 
-        if isinstance(template, str):
+        if isinstance(template, six.string_types):
             return _render(jinja2.Template(template), template)
 
         if isinstance(template, jinja2.environment.Template):
