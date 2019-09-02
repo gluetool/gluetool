@@ -93,7 +93,7 @@ class BashCompletion(gluetool.Module):
         # Inspect all option groups defined by the module, and add every option found
         for module_name in iterkeys(self.glue.modules):
             Configurable._for_each_option_group(_add_options_from_group,
-                                                self.glue.modules[module_name]['class'].options)
+                                                self.glue.modules[module_name].klass.options)
 
         # use the same loop code for the tool as well, just set module_name correctly
         module_name = self.glue.tool._command_name
