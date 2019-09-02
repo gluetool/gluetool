@@ -78,10 +78,10 @@ class OptionsGatherer(object):
 
         # Fill it with the module data by executing the module AST node withing the context
         # of our placeholder's namespace.
-        six.exec_(node.root().as_string(), globals=module.__dict__, locals=None)
+        six.exec_(node.root().as_string(), module.__dict__)
 
         # Now "evaluate" options structure inside this module, assign it to chosen name...
-        six.exec_('__pylint_options = {}'.format(node.value.as_string()), globals=module.__dict__, locals=None)
+        six.exec_('__pylint_options = {}'.format(node.value.as_string()), module.__dict__)
 
         # ... and now pull the evaluated, Python data structure, out of the module namespace.
         executed_options = module.__dict__['__pylint_options']
