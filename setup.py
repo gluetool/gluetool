@@ -3,8 +3,6 @@ from setuptools import setup
 
 if __name__ == '__main__':
     setup(name='gluetool',
-          setup_requires=['setuptools_scm'],
-          use_scm_version=True,
           packages=[
               'gluetool',
               'gluetool.pylint',
