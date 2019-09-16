@@ -14,6 +14,11 @@ if __name__ == '__main__':
                   'gluetool-html-log = gluetool.html_log:main'
               ]
           },
+          package_data={
+              'gluetool': [
+                  'py.typed'
+              ]
+          },
           data_files=[
               ('gluetool_modules', [
                   'gluetool_modules/bash_completion.py',
@@ -52,8 +57,8 @@ if __name__ == '__main__':
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',
-              'typing==3.6.6',
-              'typing-extensions==3.6.6',
+              'typing==3.7.4',
+              'typing-extensions==3.7.4',
               'urlnormalizer==1.2.0'
           ],
           description='Python framework for constructing command-line pipelines',
