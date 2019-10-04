@@ -91,6 +91,8 @@ DEFAULT_LOG_LEVEL = logging.DEBUG if os.getenv('GLUETOOL_DEBUG') else logging.IN
 # e.g. raw output of commands or API responses.
 VERBOSE = 5
 
+# Our custom "important" loglevel
+IMPORTANT = 21
 
 _TRACEBACK_TEMPLATE = """
 {%- set label = '{}:'.format(label) %}
@@ -596,6 +598,12 @@ class ContextAdapter(logging.LoggerAdapter):
         self.log(logging.INFO, msg, exc_info=exc_info, extra=extra, sentry=sentry)
 
     # pylint: disable=arguments-differ
+    def important(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
+        # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
+
+        self.log(IMPORTANT, msg, exc_info=exc_info, extra=extra, sentry=sentry)
+
+    # pylint: disable=arguments-differ
     def warning(self, msg, exc_info=None, extra=None, sentry=False):   # type: ignore
         # type: (str, Optional[ExceptionInfoType], Optional[Dict[str, Any]], bool) -> None
 
@@ -661,6 +669,7 @@ class LoggerMixin(object):
         self.verbose = logger.verbose
         self.debug = logger.debug
         self.info = logger.info
+        self.important = logger.important
         self.warning = self.warn = logger.warning
         self.error = logger.error
         self.exception = logger.exception
@@ -699,6 +708,7 @@ class LoggingFormatter(logging.Formatter):
         VERBOSE: 'V',
         logging.DEBUG: 'D',
         logging.INFO: '+',
+        IMPORTANT: '!',
         logging.WARNING: 'W',
         logging.ERROR: 'E',
         logging.CRITICAL: 'C'
@@ -707,6 +717,7 @@ class LoggingFormatter(logging.Formatter):
     #: Colorizers assigned to loglevels
     _level_color = {
         logging.INFO: lambda text: Colors.style(text, fg='green'),
+        IMPORTANT: lambda text: Colors.style(text, fg='blue'),
         logging.WARNING: lambda text: Colors.style(text, fg='yellow'),
         logging.ERROR: lambda text: Colors.style(text, fg='red'),
         logging.CRITICAL: lambda text: Colors.style(text, fg='red')
@@ -986,7 +997,7 @@ class Logging(object):
         if logger == jaeger_logger:
             jaeger_context_adapter = PackageAdapter(Logging.get_logger(), 'tracing')
 
-            for attr in ('debug', 'info', 'warning', 'error', 'exception'):
+            for attr in ('debug', 'info', 'important', 'warning', 'error', 'exception'):
                 setattr(logger, attr, getattr(jaeger_context_adapter, attr))
 
             logger.info = logger.debug  # type: ignore
@@ -1177,5 +1188,6 @@ class Logging(object):
         return logger
 
 
-# Add log-level => label translation for our custom VERBOSE level
+# Add log-level => label translation for our custom levels
 logging.addLevelName(VERBOSE, 'VERBOSE')
+logging.addLevelName(IMPORTANT, 'IMPORTANT')
