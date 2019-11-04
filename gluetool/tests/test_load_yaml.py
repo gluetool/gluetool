@@ -2,6 +2,7 @@ import re
 
 import pytest
 
+import gluetool
 from gluetool import GlueError
 from gluetool.log import format_dict
 from gluetool.utils import load_yaml
@@ -53,3 +54,23 @@ def test_bad_yaml(tmpdir):
     with pytest.raises(GlueError,
                        match=r"(?ms)Unable to load YAML file '{}': .*? line 1, column 2".format(re.escape(filepath))):
         load_yaml(filepath)
+
+
+def test_import_variables(tmpdir, logger):
+    g = tmpdir.join('vars.yaml')
+    g.write("""---
+
+FOO: bar
+""")
+
+    f = tmpdir.join('test.yml')
+    f.write("""---
+
+# !import-variables {}
+
+- dummy: "{{{{ FOO }}}}"
+""".format(str(g)))
+
+
+    mapping = gluetool.utils.PatternMap(str(f), logger=logger, allow_variables=True)
+    assert mapping.match('dummy') == 'bar'
