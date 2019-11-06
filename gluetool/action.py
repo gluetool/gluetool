@@ -47,6 +47,7 @@ To control behavior of tracing subsystem, you can use following environment vari
         traces, listens.
 """
 
+import datetime
 import os
 import threading
 import time
@@ -298,10 +299,11 @@ class Action(object):
 
         Action._add_action(self)
 
-        self.logger.debug("action '{}', child of '{}', with span '{}', starts".format(
+        self.logger.debug("action '{}', child of '{}', with span '{}', starts at {}".format(
             self.label,
             self.parent.label if self.parent else '<unknown parent>',
-            self.span if self.span else '<unknown span>'
+            self.span if self.span else '<unknown span>',
+            datetime.datetime.now().strftime('%s.%f')
         ))
 
     def __repr__(self):
@@ -323,10 +325,11 @@ class Action(object):
         if self.span:
             self.span.finish()
 
-        self.logger.debug("action '{}', child of '{}', with span '{}', finished".format(
+        self.logger.debug("action '{}', child of '{}', with span '{}', finished at {}".format(
             self.label,
             self.parent.label if self.parent else '<unknown parent>',
-            self.span if self.span else '<unknown span>'
+            self.span if self.span else '<unknown span>',
+            datetime.datetime.now().strftime('%s.%f')
         ))
 
     def __enter__(self):
