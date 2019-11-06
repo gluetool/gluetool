@@ -1161,7 +1161,7 @@ def _load_yaml_variables(data, enabled=True, logger=None):
     """
     Load all variables from files referenced by a YAML, and return function to render a string
     as a template using these variables. The files containing variables are mentioned in comments,
-    in a form ``# !include <filepath>`` form.
+    in a form ``# !import-variables <filepath>`` form.
 
     :param data: data loaded from a YAML file.
     :param bool enabled: when set to ``False``, variables are not loaded and a simple no-op
@@ -1188,14 +1188,14 @@ def _load_yaml_variables(data, enabled=True, logger=None):
 
         return _render_template_nop
 
-    # Ok, so this YAML data contains comments. Check their values to find `!include` directives.
+    # Ok, so this YAML data contains comments. Check their values to find `!import-variables` directives.
     # Load referenced files and merged them into a single context.
     context = {}  # type: Dict[str, Any]
 
     for comment in data.ca.comment[1]:
         value = comment.value.strip()
 
-        if not value.startswith('# !include'):
+        if not value.startswith('# !import-variables'):
             continue
 
         try:
@@ -1239,7 +1239,7 @@ class SimplePatternMap(LoggerMixin, object):
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :param bool allow_variables: if set, both patterns and converters are first treated as templates,
         and as such are rendered before doing anything else. Map may contain special comments,
-        ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
+        ``# !import-variables <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
     def __init__(self, filepath, logger=None, allow_variables=False):
@@ -1357,7 +1357,7 @@ class PatternMap(LoggerMixin, object):
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :param bool allow_variables: if set, both patterns and converters are first treated as templates,
         and as such are rendered before doing anything else. Map may contain special comments,
-        ``# !include <path>``, where path refers to a YAML file providing the necessary variables.
+        ``# !import-variables <path>``, where path refers to a YAML file providing the necessary variables.
     """
 
     def __init__(self,
