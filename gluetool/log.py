@@ -47,6 +47,12 @@ import jinja2
 import tabulate
 from six import PY2, ensure_str, ensure_binary, iteritems, iterkeys
 
+try:
+    from xmlrpclib import _Method as xmlrpclib_method
+
+except ImportError:
+    xmlrpclib_method = None
+
 from .color import Colors
 
 # Type annotations
@@ -104,9 +110,15 @@ At {{ stack[-1][0] }}:{{ stack[-1][1] }}, in {{ stack[-1][2] }}:
   File "{{ filepath }}", line {{ lineno }}, in {{ fn }}
     {{ text | default('') }}
 
+  {%- if filepath.endswith('xmlrpclib.py') %}
+
+    Local variables: cannot display because of xmlrpclib quirks
+  {%- else %}
+
     Local variables:{% for name in iterkeys(frame.f_locals) | sort %}
         {{ name }} = {{ frame.f_locals[name] }}
     {%- endfor %}
+  {% endif %}
 {% endfor %}
 ---^---^---^---^---^---^----------^---^---^---^---^---^---
 """
@@ -264,6 +276,9 @@ def format_dict(dictionary):
     # json encoder does not know how to encode such class
     def default(obj):
         # type: (Any) -> str
+
+        if xmlrpclib_method and isinstance(obj, xmlrpclib_method):
+            return '<xmlrpclib._Method>'
 
         return repr(obj)
 
