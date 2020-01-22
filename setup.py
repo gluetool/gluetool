@@ -46,7 +46,7 @@ if __name__ == '__main__':
               'beautifulsoup4==4.6.3',
               'colorama==0.3.9',
               'docutils==0.14',
-              'enum34==1.1.6',
+              'enum34==1.1.6; python_version == "2.7"',
               'future==0.16.0',
               'Jinja2==2.10',
               'lxml==4.2.4',
