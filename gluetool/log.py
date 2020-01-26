@@ -79,6 +79,8 @@ LoggingFunctionType = Callable[
     None
 ]
 
+ContextInfoType = Tuple[int, Any]
+
 
 BLOB_HEADER = '---v---v---v---v---v---'
 BLOB_FOOTER = '---^---^---^---^---^---'
@@ -442,19 +444,43 @@ class SingleLogLevelFileHandler(logging.FileHandler):
         super(SingleLogLevelFileHandler, self).emit(record)
 
 
+def _move_contexts(src, dst):
+    # type: (Dict[str, ContextInfoType], Dict[str, ContextInfoType]) -> None
+
+    for name in list(iterkeys(src)):
+        if not name.startswith('ctx_'):
+            continue
+
+        # Drop leading "ctx_" during the move.
+        dst[name[4:]] = src[name]
+        del src[name]
+
+
+def _add_thread_context(contexts, record):
+    # type: (Dict[str, ContextInfoType], logging.LogRecord) -> None
+
+    assert contexts is not None
+
+    thread_name = getattr(record, 'threadName', None)
+
+    if thread_name is None or thread_name == 'MainThread':
+        return
+
+    contexts['thread_name'] = (0, thread_name)
+
+
 class ContextAdapter(logging.LoggerAdapter):
     """
     Generic logger adapter that collects "contexts", and prepends them
     to the message.
 
-    "context" is any key in ``extra`` dictionary starting with ``ctx_``,
-    whose value is expected to be tuple of ``(priority, value)``. Contexts
-    are then sorted by their priorities before inserting them into the message
-    (lower priority means context will be placed closer to the beggining of
-    the line - highest priority comes last.
+    A "context" is a descriptive string, with a priority. Contexts are then sorted
+    by their priorities before inserting them into the message (lower priority means
+    context will be placed closer to the beggining of the line - highest priority
+    comes last.
 
     ``ContextAdapter`` is a corner stone of our logging infrastructure, **everything** is
-    supposed to, one way or another, to use this class (or one of its children) for logging.
+    supposed to, one way or another, use this class (or one of its children) for logging.
     We should avoid using bare ``Logger`` instances because they lack context propagation,
     message routing to debug and verbose files, ``verbose`` method & ``sentry`` parameter.
 
@@ -466,12 +492,48 @@ class ContextAdapter(logging.LoggerAdapter):
     :param dict extras: additional extra keys passed to the parent class.
         The dictionary is then used to update messages' ``extra`` key with
         the information about context.
+        Keys starting with `ctx_` are removed from this dictionary, and become contexts.
+    :param dict(str, tuple(int obj)) contexts: mapping of context names and tuples of their priority and value.
     """
 
-    def __init__(self, logger, extra=None):
-        # type: (Union[logging.Logger, ContextAdapter], Optional[Dict[str, Any]]) -> None
+    def __init__(self,
+                 logger,  # type: Union[logging.Logger, ContextAdapter]
+                 extra=None,  # type: Optional[Dict[str, Any]]
+                 contexts=None  # type: Optional[Dict[str, ContextInfoType]]
+                ):  # noqa
+        # type: (...) -> None
 
-        super(ContextAdapter, self).__init__(logger, extra or {})  # type: ignore  # base class expects just Logger
+        extra = extra or {}
+        contexts = contexts or {}
+
+        # Adapters are chained, there is no inheritance! We cannot create any `self._contexts` and gather all contexts
+        # there, because each adapter is isolated from the rest of the chain. The only things they pass between them
+        # is the message and message's `extra` mapping.
+        #
+        # So, we use `self._contexts` to gather contexts of *this* adapter only. Contexts may be specified as entries
+        # in `extra` mapping given to us, or via more explicit `contexts` parameter. When a logging method gets called,
+        # it would call its instance's `log()` and `process()` methods which would update `extra` parameter, given to
+        # the logging method, with our `self_contexts`. `log()` would then called underlying logger's `log()` which
+        # would update `extra` with its own contexts, and so on.
+        #
+        # Note that `extra` in this method and `extra` passed to logging method - message's `extra` - are two
+        # completely different variables. Both specify fields to add to the emitted log record, and it is expected to
+        # merge message's `extra` with those of loggers and adapters, and we make sure it happens, to comply with
+        # expected logging behavior.
+        #
+        # Since message's `extra` is encountered by all loggers and adapters in the chain, we "hijack" it to carry
+        # `contexts` item in which we collect all contexts from involved adapters.
+
+        self._contexts = {}  # type: Dict[str, ContextInfoType]
+
+        for name in iterkeys(contexts):
+            self._contexts[name] = contexts[name]
+
+        # Remove any `ctx_*` entries from `extra` container to our dedicated store. We don't wish these contexts
+        # to materialize as record fields, we only want `contexts` field to appear, containing all the contexts.
+        _move_contexts(extra, self._contexts)
+
+        super(ContextAdapter, self).__init__(logger, extra)  # type: ignore  # base class expects just Logger
 
         self._logger = logger
 
@@ -490,24 +552,44 @@ class ContextAdapter(logging.LoggerAdapter):
 
     def process(self, msg, kwargs):
         # type: (str, MutableMapping[str, Any]) -> Tuple[str, MutableMapping[str, Any]]
-        """
-        Original ``process`` overwrites ``kwargs['extra']`` which doesn't work
-        for us - we want to chain adapters, getting more and more contexts
-        on the way. Therefore ``update`` instead of assignment.
-        """
 
+        # Original `process` overwrites `kwargs['extra']` which doesn't work for us - we want to chain adapters,
+        # getting more and more contexts on the way. Therefore `update` instead of assignment.
+
+        # kwargs are passed down the chain of loggers. Its `extra` item is a mapping of additional fields logging
+        # subsystem would create in the `Logging.LogRecord` object. Context adapters cooperate by using
+        # `extra['contexts']` to collect all contexts from involved adapters.
+
+        # First, make sure `extra` exists, and that it is a dictionary.
         extra = kwargs.get('extra', {})
 
         if extra is None:
             extra = {}
 
+        # If `extra` is set and it's not a dictionary, replace it with a dictionary, but save the original value.
         if not isinstance(extra, dict):
             extra = {
                 'legacy-extra': extra
             }
 
+        # Next, add our contexts to the shared aggregation mapping. Make sure to initialize it properly.
+        contexts = extra.get('contexts', {})
+        contexts.update(self._contexts.copy())
+
+        # Move any contexts from `extra` to this mapping, too - it's not common but e.g. `verbose` adds
+        # `ctx_verbose_tag` context this way, because `verbose` is not tied to any particular adapter.
+        _move_contexts(extra, contexts)
+
+        # Now, this is what adapters are supposed to do: merge their `self.extra` into what's been given to the logging
+        # method. Note that we took care about removing any contexts from adapter's `extra` and from the `extra`
+        # parameter.
         extra.update(self.extra)  # type: ignore  # `self.extra` does exist
 
+        # Force aggregation store into the `extra` parameter - it may have been missing, see the initialization above.
+        extra['contexts'] = contexts
+
+        # Save updated `extra` value back to `kwargs`. It may have been `None`, but from now on it's a dictionary,
+        # with an item dedicated to context aggregation.
         kwargs['extra'] = extra
 
         return msg, kwargs
@@ -629,7 +711,7 @@ class ModuleAdapter(ContextAdapter):
     def __init__(self, logger, module):
         # type: (ContextAdapter, gluetool.glue.Module) -> None
 
-        super(ModuleAdapter, self).__init__(logger, {'ctx_module_name': (10, module.unique_name)})
+        super(ModuleAdapter, self).__init__(logger, contexts={'module_name': (10, module.unique_name)})
 
 
 class LoggerMixin(object):
@@ -678,7 +760,7 @@ class PackageAdapter(ContextAdapter):
     def __init__(self, logger, name):
         # type: (ContextAdapter, str) -> None
 
-        super(PackageAdapter, self).__init__(logger, {'ctx_package_name': (50, name)})
+        super(PackageAdapter, self).__init__(logger, contexts={'package_name': (50, name)})
 
 
 class LoggingFormatter(logging.Formatter):
@@ -784,32 +866,37 @@ class LoggingFormatter(logging.Formatter):
             # without starting new line. We must do it, to make report more readable.
             values['exc_text'] = '\n\n' + LoggingFormatter._format_exception_chain(record.exc_info)
 
-        # Handle context properties of the record
-        def _add_context(context_name, context_value):
-            # type: (str, str) -> None
+        # Add record contexts to the message formatting string
+        contexts = getattr(record, 'contexts', {})
 
-            fmt.insert(2, '[{%s}]' % context_name)
-            values[context_name] = context_value
+        if contexts:
+            # we don't have access to log record any time sooner, therefore adding thread context here
+            _add_thread_context(contexts, record)
 
-        # find all context properties attached to the record
-        ctx_properties = [prop for prop in dir(record) if prop.startswith('ctx_')]
+            # Sorted by priorities, the higher the priority, the more on the right the context should stand
+            # in the message:
+            #
+            #   [ctx prio 10] [ctx prio 20] [ctx prio 1000]
+            #
+            # We're inserting contexts into `fmt` one by one, at the same spot. Once inserted, following inserts
+            # will shift the context more to the right. That means the higher priority contexts should be inserted
+            # sooner.
+            #
+            # [ctx prio 1000] => [ctx prio 20] [ctx prio 1000] => [ctx prio 10] [ctx prio 20] [ctx prio 1000]
+            #
+            # Regular sort would yield contexts by their priorities from lower to higher ones, therefore reversed flag.
+            # That way we'd start inserting higher priority contexts sooner than lower priority ones.
+            sorted_contexts = sorted(
+                iterkeys(contexts),
+                key=lambda ctx_name: contexts[ctx_name][0],
+                reverse=True
+            )
 
-        if ctx_properties:
-            # Sorting them in reverse order of priorities - we're goign to insert
-            # their values into `fmt`, so the highest priority context must be
-            # inserted as the last one.
-            sorted_ctxs = sorted(ctx_properties, key=lambda x: getattr(record, x)[0], reverse=True)
+            for name in sorted_contexts:
+                _, value = contexts[name]
 
-            for name in sorted_ctxs:
-                _, value = getattr(record, name)
-
-                _add_context(name, value)
-
-        # add thread name context if we're not in the main thread
-        thread_name = getattr(record, 'threadName', None)
-
-        if thread_name is not None and thread_name != 'MainThread':
-            _add_context('thread_name', thread_name)
+                fmt.insert(2, '[{%s}]' % name)
+                values[name] = value
 
         # format message
         msg = ' '.join(fmt).format(**values)
@@ -903,6 +990,23 @@ class JSONLoggingFormatter(logging.Formatter):
         }
 
         serialized['message'] = record.getMessage()
+
+        contexts = getattr(record, 'contexts', {})
+
+        if contexts:
+            # we don't have access to log record any time sooner, therefore adding thread context here
+            _add_thread_context(contexts, record)
+
+            serialized['contexts'] = {
+                name: {
+                    'priority': contexts[name][0],
+                    'value': contexts[name][1]
+                }
+                for name in iterkeys(contexts)
+            }
+
+        else:
+            serialized['contexts'] = {}
 
         if record.exc_info:
             JSONLoggingFormatter._format_exception_chain(serialized, record.exc_info)

@@ -452,7 +452,7 @@ class PipelineAdapter(ContextAdapter):
     def __init__(self, logger, pipeline_name):
         # type: (ContextAdapter, str) -> None
 
-        super(PipelineAdapter, self).__init__(logger, {'ctx_pipeline_name': (5, pipeline_name)})
+        super(PipelineAdapter, self).__init__(logger, contexts={'pipeline_name': (5, pipeline_name)})
 
 
 class Pipeline(LoggerMixin, object):
