@@ -147,6 +147,21 @@ class Result(Generic[T, E]):
 
         raise GlueError(message)
 
+    def expect_error(self, message):
+        # type: (str) -> E
+        """
+        Return the result value if it is invalid. Otherwise, an exception is raised.
+        """
+
+        if self.is_error:
+            return cast(E, self._value)
+
+        # Avoiding cyclic imports...
+        # pylint: disable=cyclic-import
+        from .glue import GlueError
+
+        raise GlueError(message)
+
     def unwrap(self):
         # type: () -> T
         """
@@ -154,6 +169,14 @@ class Result(Generic[T, E]):
         """
 
         return self.expect('Expected valid result value, found error')
+
+    def unwrap_error(self):
+        # type: () -> E
+        """
+        Return the error value if the result is invalid. Othwerise, an exception is raised.
+        """
+
+        return self.expect_error('Expected invalid result value, found valid one')
 
     def unwrap_or(self, default):
         # type: (T) -> T

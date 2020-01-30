@@ -64,6 +64,16 @@ def test_unwrap():
         n.unwrap()
 
 
+def test_unwrap_error():
+    o = Ok('foo')
+    n = Error('foo')
+
+    with pytest.raises(gluetool.GlueError):
+        o.unwrap_error()
+
+    assert n.unwrap_error() == 'foo'
+
+
 def test_expect():
     o = Ok('foo')
     n = Error('foo')
@@ -72,6 +82,16 @@ def test_expect():
 
     with pytest.raises(gluetool.GlueError):
         n.expect('failure')
+
+
+def test_expect_error():
+    o = Ok('foo')
+    n = Error('foo')
+
+    with pytest.raises(gluetool.GlueError):
+        o.expect_error('failure')
+
+    assert n.expect_error('failure') == 'foo'
 
 
 def test_unwrap_or():
