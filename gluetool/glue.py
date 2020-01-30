@@ -1768,6 +1768,12 @@ class Glue(Configurable):
                         """,
                 'default': None
             },
+            ('J', 'json-output'): {
+                'help': """
+                        If set, all log messages sent to the terminal are emitted as JSON structures.
+                        """,
+                'action': 'store_true'
+            },
             ('o', 'debug-file', 'output'): {
                 'help': 'Log messages with at least ``DEBUG`` level are sent to this file.'
             },
@@ -2419,6 +2425,8 @@ class Glue(Configurable):
     def parse_args(self, args):
         # type: (Any) -> None
 
+        from .utils import normalize_bool_option
+
         module_dirs = '\n'.join(['        - {}'.format(directory) for directory in DEFAULT_MODULE_PATHS])
         data_dirs = '\n'.join(['        - {}'.format(directory) for directory in [DEFAULT_DATA_PATH]])
         module_config_dirs = '\n'.join(['        - {}'.format(directory) for directory in DEFAULT_MODULE_CONFIG_PATHS])
@@ -2461,12 +2469,12 @@ class Glue(Configurable):
         else:
             level = logging.INFO
 
-        from .utils import normalize_bool_option
         switch_colors(normalize_bool_option(self.option('colors')))
 
         debug_file = self.option('debug-file')
         verbose_file = self.option('verbose-file')
         json_file = self.option('json-file')
+        json_output = normalize_bool_option(self.option('json-output'))
 
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
@@ -2476,6 +2484,7 @@ class Glue(Configurable):
             debug_file=debug_file,
             verbose_file=verbose_file,
             json_file=json_file,
+            json_output=json_output,
             sentry=self._sentry,
             show_traceback=normalize_bool_option(self.option('show-traceback'))
         )

@@ -1183,6 +1183,7 @@ class Logging(object):
                      debug_file=None,  # type: Optional[str]
                      verbose_file=None,  # type: Optional[str]
                      json_file=None,  # type: Optional[str]
+                     json_output=False,  # type: bool
                      sentry=None,  # type: Optional[gluetool.sentry.Sentry]
                      show_traceback=False  # type: bool
                     ):  # noqa
@@ -1205,6 +1206,8 @@ class Logging(object):
             messages of ``VERBOSE`` log levels into this this file.
         :param str json_file: if set, all logging messages are sent to this file in a form
             of JSON structures.
+        :param bool json_output: if set, all logging messages sent to the terminal are emitted as
+            JSON structures.
         :param int level: desired log level. One of constants defined in :py:mod:`logging` module,
             e.g. :py:data:`logging.DEBUG` or :py:data:`logging.ERROR`.
         :param bool sentry: if set, logger will be augmented to send every log message to the Sentry
@@ -1233,7 +1236,11 @@ class Logging(object):
             list(map(Logging.configure_logger, Logging.OUR_LOGGERS))
 
         # set formatter
-        Logging.stderr_handler.setFormatter(LoggingFormatter())
+        if json_output:
+            Logging.stderr_handler.setFormatter(JSONLoggingFormatter())
+
+        else:
+            Logging.stderr_handler.setFormatter(LoggingFormatter())
 
         # set log level to new value
         Logging.stderr_handler.setLevel(level)
