@@ -1768,9 +1768,23 @@ class Glue(Configurable):
                         """,
                 'default': None
             },
+            'json-file-pretty': {
+                'help': """
+                        When JSON output to file is enable (via ``-j/--json-file``), instead of emmiting one log
+                        entry per line, nicely format the entries for better readability.
+                        """,
+                'action': 'store_true'
+            },
             ('J', 'json-output'): {
                 'help': """
                         If set, all log messages sent to the terminal are emitted as JSON structures.
+                        """,
+                'action': 'store_true'
+            },
+            'json-output-pretty': {
+                'help': """
+                        When JSON output is enable (via ``-J/--json-output``), instead of emmiting one log
+                        entry per line, nicely format the entries for better readability.
                         """,
                 'action': 'store_true'
             },
@@ -2474,7 +2488,9 @@ class Glue(Configurable):
         debug_file = self.option('debug-file')
         verbose_file = self.option('verbose-file')
         json_file = self.option('json-file')
+        json_file_pretty = normalize_bool_option(self.option('json-file-pretty'))
         json_output = normalize_bool_option(self.option('json-output'))
+        json_output_pretty = normalize_bool_option(self.option('json-output-pretty'))
 
         if debug_file and not verbose_file:
             verbose_file = '{}.verbose'.format(debug_file)
@@ -2484,7 +2500,9 @@ class Glue(Configurable):
             debug_file=debug_file,
             verbose_file=verbose_file,
             json_file=json_file,
+            json_file_pretty=json_file_pretty,
             json_output=json_output,
+            json_output_pretty=json_output_pretty,
             sentry=self._sentry,
             show_traceback=normalize_bool_option(self.option('show-traceback'))
         )

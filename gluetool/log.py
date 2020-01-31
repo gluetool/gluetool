@@ -242,6 +242,22 @@ def print_wrapper(log_fn=None, label='print wrapper'):
         log_fn('{} {} disabled'.format(BLOB_FOOTER, label))
 
 
+def _json_dump(struct, **kwargs):
+    # type: (Any, **Any) -> str
+    """
+    Dump given data structure as a JSON string. Additional arguments are passed to ``json.dumps``.
+    """
+
+    # Use custom "default" handler, to at least encode obj's repr() output when
+    # json encoder does not know how to encode such class
+    def default(obj):
+        # type: (Any) -> str
+
+        return repr(obj)
+
+    return json.dumps(struct, default=default, **kwargs)
+
+
 def format_blob(blob):
     # type: (AnyStr) -> str
 
@@ -262,14 +278,7 @@ def format_dict(dictionary):
     capabilities to present readable representation of a given structure.
     """
 
-    # Use custom "default" handler, to at least encode obj's repr() output when
-    # json encoder does not know how to encode such class
-    def default(obj):
-        # type: (Any) -> str
-
-        return repr(obj)
-
-    return json.dumps(dictionary, sort_keys=True, indent=4, separators=(',', ': '), default=default)
+    return _json_dump(dictionary, sort_keys=True, indent=4, separators=(',', ': '))
 
 
 def format_table(table, **kwargs):
@@ -794,13 +803,14 @@ class LoggingFormatter(logging.Formatter):
         logging.CRITICAL: lambda text: Colors.style(text, fg='red')
     }  # type: Dict[int, Callable[[str], str]]
 
-    def __init__(self, colors=True, log_tracebacks=False):
-        # type: (Optional[bool], Optional[bool]) -> None
+    def __init__(self, colors=True, log_tracebacks=False, prettify=False):
+        # type: (bool, bool, bool) -> None
 
         super(LoggingFormatter, self).__init__()
 
         self.colors = colors
         self.log_tracebacks = log_tracebacks
+        self.prettify = prettify
 
     @staticmethod
     def _format_exception_chain(exc_info):
@@ -912,11 +922,17 @@ class JSONLoggingFormatter(logging.Formatter):
     Custom logging formatter producing a JSON dictionary describing the log record.
     """
 
-    def __init__(self, **kwargs):
-        # type: (**Any) -> None
+    def __init__(self, colors=False, log_tracebacks=False, prettify=False):
+        # type: (bool, bool, bool) -> None
         # pylint: disable=unused-argument
 
         super(JSONLoggingFormatter, self).__init__()
+
+        if prettify:
+            self._emit = format_dict
+
+        else:
+            self._emit = _json_dump  # type: ignore
 
     @staticmethod
     def _format_exception_chain(serialized, exc_info):
@@ -1011,7 +1027,7 @@ class JSONLoggingFormatter(logging.Formatter):
         if record.exc_info:
             JSONLoggingFormatter._format_exception_chain(serialized, record.exc_info)
 
-        return ensure_str(format_dict(serialized))
+        return ensure_str(self._emit(serialized))
 
 
 class Logging(object):
@@ -1141,7 +1157,8 @@ class Logging(object):
     def _setup_log_file(filepath,  # type: str
                         level,  # type: int
                         limit_level=False,  # type: bool
-                        formatter_class=LoggingFormatter  # type: Type[Union[LoggingFormatter, JSONLoggingFormatter]]
+                        formatter_class=LoggingFormatter,  # type: Type[Union[LoggingFormatter, JSONLoggingFormatter]]
+                        prettify=False  # type: bool
                        ):  # noqa
         # type: (...) -> Optional[logging.FileHandler]
 
@@ -1156,7 +1173,7 @@ class Logging(object):
 
         handler.setLevel(level)
 
-        formatter = formatter_class(colors=False, log_tracebacks=True)
+        formatter = formatter_class(colors=False, log_tracebacks=True, prettify=prettify)
         handler.setFormatter(formatter)
 
         def _close_log_file():
@@ -1183,7 +1200,9 @@ class Logging(object):
                      debug_file=None,  # type: Optional[str]
                      verbose_file=None,  # type: Optional[str]
                      json_file=None,  # type: Optional[str]
+                     json_file_pretty=False,  # type: bool
                      json_output=False,  # type: bool
+                     json_output_pretty=False,  # type: bool
                      sentry=None,  # type: Optional[gluetool.sentry.Sentry]
                      show_traceback=False  # type: bool
                     ):  # noqa
@@ -1237,7 +1256,7 @@ class Logging(object):
 
         # set formatter
         if json_output:
-            Logging.stderr_handler.setFormatter(JSONLoggingFormatter())
+            Logging.stderr_handler.setFormatter(JSONLoggingFormatter(prettify=json_output_pretty))
 
         else:
             Logging.stderr_handler.setFormatter(LoggingFormatter())
@@ -1257,7 +1276,12 @@ class Logging(object):
             Logging.verbose_file_handler = Logging._setup_log_file(verbose_file, VERBOSE, limit_level=True)
 
         if json_file:
-            Logging.json_file_handler = Logging._setup_log_file(json_file, VERBOSE, formatter_class=JSONLoggingFormatter)
+            Logging.json_file_handler = Logging._setup_log_file(
+                json_file,
+                VERBOSE,
+                formatter_class=JSONLoggingFormatter,
+                prettify=json_file_pretty
+            )
 
         # now our main logger should definitely exist and it should be usable
         logger = Logging.get_logger()
