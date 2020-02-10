@@ -26,8 +26,9 @@ from .log import log_dict
 from .utils import format_command_line, cached_property, normalize_path, render_template, normalize_multistring_option
 
 # Type annotations
-# pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Callable, List, Optional, NoReturn, Union  # noqa
+# pylint: disable=unused-import,wrong-import-order,ungrouped-imports
+from typing import cast, overload, Any, Callable, List, Optional, NoReturn, Union  # noqa
+from typing_extensions import Literal  # noqa
 from types import FrameType  # noqa
 from gluetool.glue import PipelineReturnType  # noqa
 
@@ -189,10 +190,24 @@ class Gluetool(object):
 
         sys.exit(exit_status)
 
-    # pylint: disable=invalid-name
-    def _handle_failure_core(self, failure):
-        # type: (gluetool.glue.Failure) -> NoReturn
+    # Depending on the value of the optional `do_quit` parameter, the methods may not return,
+    # because when set to `True`, the methods eventually call `sys.exit()`. We're using `@overload`
+    # to explain the situation to type checking.
 
+    # pylint: disable=invalid-name,function-redefined
+    @overload
+    def _handle_failure_core(self, failure, do_quit=True):
+        # type: (gluetool.glue.Failure, Literal[True]) -> NoReturn
+
+        pass
+
+    @overload  # noqa
+    def _handle_failure_core(self, failure, do_quit):
+        # type: (gluetool.glue.Failure, Literal[False]) -> None
+
+        pass
+
+    def _handle_failure_core(self, failure, do_quit=True):  # type: ignore  # noqa
         logger = self._exit_logger
 
         assert failure.exc_info is not None
@@ -223,14 +238,24 @@ class Gluetool(object):
         if self.sentry and not failure.sentry_event_id:
             self.sentry.submit_exception(failure, logger=logger)
 
-        self._quit(exit_status)
+        if do_quit:
+            self._quit(exit_status)
 
-    # pylint: disable=invalid-name
-    def _handle_failure(self, failure):
-        # type: (gluetool.glue.Failure) -> NoReturn
+    # pylint: disable=invalid-name,function-redefined
+    @overload
+    def _handle_failure(self, failure, do_quit=True):
+        # type: (gluetool.glue.Failure, Literal[True]) -> NoReturn
+        pass
 
+    @overload  # noqa
+    def _handle_failure(self, failure, do_quit=False):
+        # type: (gluetool.glue.Failure, Literal[False]) -> None
+
+        pass
+
+    def _handle_failure(self, failure, do_quit=True):  # type: ignore  # noqa
         try:
-            self._handle_failure_core(failure)
+            self._handle_failure_core(failure, do_quit=do_quit)
 
         # pylint: disable=broad-except
         except Exception:
@@ -462,6 +487,9 @@ Will try to submit it to Sentry but giving up on everything else.
         failure, destroy_failure = self.run_pipeline()
 
         if destroy_failure:
+            if failure:
+                self._handle_failure(failure, do_quit=False)
+
             self._exit_logger.warning('Exception raised when destroying modules, overriding exit status')
 
             self._handle_failure(destroy_failure)
