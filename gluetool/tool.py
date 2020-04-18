@@ -66,6 +66,11 @@ class Gluetool(object):
 
         self.gluetool_config_paths = DEFAULT_GLUETOOL_CONFIG_PATHS
 
+        if 'GLUETOOL_CONFIG_PATHS' in os.environ:
+            self.gluetool_config_paths = gluetool.utils.normalize_path_option(
+                os.environ['GLUETOOL_CONFIG_PATHS']
+            )
+
         self.sentry = None  # type: Optional[gluetool.sentry.Sentry]
         self.tracer = None  # type: Optional[gluetool.action.Tracer]
 
@@ -83,13 +88,6 @@ class Gluetool(object):
         from .version import __version__
 
         return ensure_str(__version__.strip())
-
-    @cached_property
-    def _command_name(self):
-        # type: () -> str
-
-        # pylint: disable=no-self-use
-        return 'gluetool'
 
     def _deduce_pipeline_desc(self, argv, modules):
         # type: (List[Any], List[str]) -> List[gluetool.glue.PipelineStepModule]
@@ -332,7 +330,7 @@ Will try to submit it to Sentry but giving up on everything else.
 
         # version
         if Glue.option('version'):
-            Glue.info('{} {}'.format(self._command_name, self._version))
+            Glue.info('gluetool {}'.format(self._version))
             sys.exit(0)
 
         GlueError.no_sentry_exceptions = normalize_multistring_option(Glue.option('no-sentry-exceptions'))

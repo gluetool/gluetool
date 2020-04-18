@@ -2459,6 +2459,7 @@ class Glue(Configurable):
 
         Supported environment variables:
 
+        * GLUETOOL_CONFIG_PATHS (string) - colon-separated list of gluetool configuration directories
         * GLUETOOL_TRACING_DISABLE - when set, tracing won't be enabled
         * GLUETOOL_TRACING_SERVICE_NAME (string) - name of the trace produced by tool execution
         * GLUETOOL_TRACING_REPORTING_HOST (string) - a hostname where tracing collector listens

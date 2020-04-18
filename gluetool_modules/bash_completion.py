@@ -12,7 +12,7 @@ from gluetool.glue import Configurable
 
 
 BASH_COMPLETION_TEMPLATE = """
-_{{ GLUE.tool._command_name }}()
+_{{ COMMAND_NAME }}()
 {
     local cur prev
     local modules {% for module_name in iterkeys(MODULE_OPTIONS) | sort %} {{ module_name | replace('-', '_') }}_opts {% endfor %}
@@ -47,7 +47,7 @@ _{{ GLUE.tool._command_name }}()
         return 0
     fi
 }
-complete -F _{{ GLUE.tool._command_name }} {{ GLUE.tool._command_name }}
+complete -F _{{ COMMAND_NAME }} {{ COMMAND_NAME }}
 
 """
 
@@ -55,6 +55,14 @@ complete -F _{{ GLUE.tool._command_name }} {{ GLUE.tool._command_name }}
 class BashCompletion(gluetool.Module):
     name = 'bash-completion'
     description = 'Generate Bash completion configuration.'
+
+    options = {
+        'command-name': {
+            'help': 'Generate rules for command COMMAND (default: %(default)s).',
+            'default': 'gluetool',
+            'type': str
+        }
+    }
 
     def sanity(self):
         if not self.glue.tool:
@@ -65,6 +73,8 @@ class BashCompletion(gluetool.Module):
 
     def execute(self):
         # pylint: disable=protected-access
+
+        command_name = self.option('command-name')
 
         module_options = collections.defaultdict(list)
 
@@ -96,7 +106,7 @@ class BashCompletion(gluetool.Module):
                                                 self.glue.modules[module_name].klass.options)
 
         # use the same loop code for the tool as well, just set module_name correctly
-        module_name = self.glue.tool._command_name
+        module_name = command_name
         Configurable._for_each_option_group(_add_options_from_group, self.glue.options)
 
         # add -h and --help to every module - these are added by argparse code to the generated
@@ -105,5 +115,8 @@ class BashCompletion(gluetool.Module):
             name: options + ['-h', '--help'] for name, options in iteritems(module_options)
         }
 
-        sys.stdout.write(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(GLUE=self.glue,
-                                                                          MODULE_OPTIONS=module_options))
+        sys.stdout.write(jinja2.Template(BASH_COMPLETION_TEMPLATE).render(
+            GLUE=self.glue,
+            MODULE_OPTIONS=module_options,
+            COMMAND_NAME=command_name
+        ))
