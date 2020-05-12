@@ -989,41 +989,48 @@ def render_template(template, logger=None, **kwargs):
 
 
 # pylint: disable=invalid-name
-def YAML():
-    # type: () -> ruamel.yaml.YAML
+def YAML(loader_type=None):
+    # type: (Optional[str]) -> ruamel.yaml.YAML
 
     """
     Provides YAML read/write interface with common settings.
 
+    :param str loader_type: type of YAML parser and loader. ``None`` or ``rt`` for round-trip (default),
+        ``safe``, ``unsafe`` or ``base``.
     :rtype: ruamel.yaml.YAML
     """
 
-    yaml = ruamel.yaml.YAML()
+    yaml = ruamel.yaml.YAML(typ=loader_type)
     yaml.indent(sequence=4, mapping=4, offset=2)
 
     return yaml
 
 
-def from_yaml(yaml_string):
-    # type: (str) -> Any
+def from_yaml(yaml_string, loader_type=None):
+    # type: (str, Optional[str]) -> Any
 
     """
     Convert YAML in a string into Python data structures.
 
     Uses internal YAML parser to produce result. Paired with :py:func:`load_yaml` and their
     JSON siblings to provide unified access to JSON and YAML.
+
+    :param str loader_type: type of YAML parser and loader. ``None`` or ``rt`` for round-trip (default),
+        ``safe``, ``unsafe`` or ``base``.
     """
 
-    return YAML().load(yaml_string)
+    return YAML(loader_type).load(yaml_string)
 
 
-def load_yaml(filepath, logger=None):
-    # type: (str, Optional[ContextAdapter]) -> Any
+def load_yaml(filepath, loader_type=None, logger=None):
+    # type: (str, Optional[str], Optional[ContextAdapter]) -> Any
 
     """
     Load data stored in YAML file, and return their Python representation.
 
     :param text filepath: Path to a file. ``~`` or ``~<username>`` are expanded before using.
+    :param str loader_type: type of YAML parser and loader. ``None`` or ``rt`` for round-trip (default),
+        ``safe``, ``unsafe`` or ``base``.
     :param gluetool.log.ContextLogger logger: Logger used for logging.
     :rtype: object
     :returns: structures representing data in the file.
@@ -1044,7 +1051,7 @@ def load_yaml(filepath, logger=None):
 
     try:
         with open(real_filepath, 'r') as f:
-            data = YAML().load(f)
+            data = YAML(loader_type=loader_type).load(f)
 
         log_dict(logger.debug, "loaded YAML data from '{}'".format(filepath), data)
 
