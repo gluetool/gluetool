@@ -66,7 +66,9 @@ if __name__ == '__main__':
               'tabulate==0.8.2',
               'typing==3.7.4',
               'typing-extensions==3.7.4',
-              'urlnormalizer==1.2.0'
+              'urlnormalizer==1.2.0',
+              'pyparsing==2.3.0',
+              'MarkupSafe==1.1.0'
           ],
           description='Python framework for constructing command-line pipelines',
           # pylint: disable=line-too-long
