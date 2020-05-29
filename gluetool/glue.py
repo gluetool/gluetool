@@ -1905,7 +1905,14 @@ class Glue(Configurable):
         """
 
         from .utils import normalize_path_option
-        return normalize_path_option(self.option('module-config-path')) or DEFAULT_MODULE_CONFIG_PATHS
+
+        if self.option('module-config-path'):
+            return normalize_path_option(self.option('module-config-path'))
+
+        if 'GLUETOOL_MODULE_CONFIG_PATHS' in os.environ:
+            return normalize_path_option(os.environ['GLUETOOL_MODULE_CONFIG_PATHS'])
+
+        return DEFAULT_MODULE_CONFIG_PATHS
 
     # pylint: disable=method-hidden
     def sentry_submit_exception(self, *args, **kwargs):
@@ -2460,6 +2467,7 @@ class Glue(Configurable):
         Supported environment variables:
 
         * GLUETOOL_CONFIG_PATHS (string) - colon-separated list of gluetool configuration directories
+        * GLUETOOL_MODULE_CONFIG_PATHS (string) - colon-separated list of gluetool modules configuration directories
         * GLUETOOL_TRACING_DISABLE - when set, tracing won't be enabled
         * GLUETOOL_TRACING_SERVICE_NAME (string) - name of the trace produced by tool execution
         * GLUETOOL_TRACING_REPORTING_HOST (string) - a hostname where tracing collector listens
