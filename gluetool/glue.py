@@ -1683,9 +1683,9 @@ class Module(Configurable):
         """
 
     def run_module(self, module, args=None):
-        # type: (str, Optional[List[str]]) -> None
+        # type: (str, Optional[List[str]]) -> PipelineReturnType
 
-        self.glue.run_module(module, args or [])
+        return self.glue.run_module(module, args or [])
 
 
 #: Describes one discovered ``gluetool`` module.
