@@ -94,7 +94,6 @@ class Tracer(object):
     :param str reporting_host: address to which tracer should submit traces.
     :param int reporting_port: port to which tracer should submit tracers.
     """
-
     # pylint: disable=too-few-public-methods
 
     TRACER = None  # type: Optional[TracingClientType]
@@ -115,6 +114,7 @@ class Tracer(object):
             reporting_host = os.getenv(TRACING_REPORTING_HOST_ENVVAR, default=DEFAULT_TRACING_REPORTING_HOST)
 
         if not reporting_port:
+            # pylint: disable=bad-option-value,invalid-envvar-default
             reporting_port = int(os.getenv(TRACING_REPORTING_PORT_ENVVAR, default=DEFAULT_TRACING_REPORTING_PORT))
 
         config = tracing_client.Config(
@@ -159,6 +159,7 @@ class Tracer(object):
         from .utils import wait
 
         if not flush_timeout:
+            # pylint: disable=bad-option-value,invalid-envvar-default
             flush_timeout = int(os.getenv(TRACING_FLUSH_TIMEOUT_ENVVAR, default=DEFAULT_TRACING_FLUSH_TIMEOUT))
 
         # yield to IOLoop to flush the spans - https://github.com/jaegertracing/jaeger-client-python/issues/50

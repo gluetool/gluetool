@@ -12,6 +12,7 @@ import argparse
 import ast
 import inspect
 import os
+import sys
 import textwrap
 
 import docutils.core
@@ -82,18 +83,21 @@ EVAL_CONTEXT_HELP_TEMPLATE = """
 def C_FUNCNAME(text):
     # type: (str) -> str
 
+    # pylint: disable=not-callable
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_ARGNAME(text):
     # type: (str) -> str
 
+    # pylint: disable=not-callable
     return Colors.style(text, fg='blue', reset=True)
 
 
 def C_LITERAL(text):
     # type: (str) -> str
 
+    # pylint: disable=not-callable
     return Colors.style(text, fg='cyan', reset=True)
 
 
@@ -113,11 +117,13 @@ class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no 
     def visit_literal(self, node):
         # type: (Any) -> None
 
+        # pylint: disable=not-callable
         self.add_text(Colors.style('', fg='cyan', reset=False))
 
     def depart_literal(self, node):
         # type: (Any) -> None
 
+        # pylint: disable=not-callable
         self.add_text(Colors.style('', reset=True))
 
     # "fields" are used to represent (shared) function parameters
@@ -126,11 +132,13 @@ class TextTranslator(sphinx.writers.text.TextTranslator):  # type: ignore  # no 
 
         _original_TextTranslator.visit_field_name(self, node)
 
+        # pylint: disable=not-callable
         self.add_text(Colors.style('', fg='blue', reset=False))
 
     def depart_field_name(self, node):
         # type: (Any) -> None
 
+        # pylint: disable=not-callable
         self.add_text(Colors.style('', reset=True))
 
         _original_TextTranslator.depart_field_name(self, node)
@@ -198,7 +206,7 @@ docutils.parsers.rst.roles.register_canonical_role('doc', doc_role_handler)
 
 
 class DummyTextBuilder:
-    # pylint: disable=too-few-public-methods,old-style-class,no-init
+    # pylint: disable=too-few-public-methods,no-init,bad-option-value,old-style-class
 
     """
     Sphinx ``TextWriter`` (and other writers as well) requires an instance of ``Builder``
@@ -212,7 +220,7 @@ class DummyTextBuilder:
     """
 
     class DummyConfig:
-        # pylint: disable=too-few-public-methods,old-style-class,no-init
+        # pylint: disable=too-few-public-methods,no-init,bad-option-value,old-style-class
 
         text_newlines = '\n'
         text_sectionchars = '*=-~"+`'
@@ -397,6 +405,7 @@ def function_help(func, name=None):
         # signature
         '{}({})'.format(C_FUNCNAME(name), ', '.join(args)),
         # body
+        # pylint: disable=not-callable
         docstring_to_help(func.__doc__) if func.__doc__ else Colors.style('    No help provided :(', fg='red')
     )
 
@@ -460,6 +469,7 @@ def extract_eval_context_info(source, logger=None):
     # ``source`` does not have its own, and in that case we should return an empty dictionary,
     # saying "module does not provide any eval context, just the one inherited from the base class",
     # and that's empty anyway.
+    # pylint: disable=bad-option-value,comparison-with-callable
     if eval_context == Configurable.eval_context:
         logger.debug('eval context matches the original one, ignoring')
         return {}
@@ -498,7 +508,12 @@ def extract_eval_context_info(source, logger=None):
 
         # wrap this assignment into a dummy Module node, to create an execution unit with just a single
         # statement (__content__ assignment), so we could slip it to compile/eval.
-        dummy_module = ast.Module([assign])
+        if sys.version_info >= (3, 8):
+            # https://github.com/pallets/werkzeug/issues/1551
+            # https://bugs.python.org/issue35894
+            dummy_module = ast.Module([assign], [])
+        else:
+            dummy_module = ast.Module([assign])
 
         # compile the module to an executable code
         code = compile(dummy_module, '', 'exec')

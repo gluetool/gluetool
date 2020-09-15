@@ -56,10 +56,7 @@ if __name__ == '__main__':
               'raven==6.9.0',
               'requests==2.19.1',
               'requests-toolbelt==0.8.0',
-              # since 0.15.52, it returns ordereddict instead of pure dicts, making format_dict unhappy
-              'ruamel.yaml==0.15.51',
-              # newer versions bring way too many incompabilities, needs deeper inspection
-              # 'ruamel.yaml==0.15.34',
+              'ruamel.yaml==0.16.12',
               'six==1.12.0',
               'Sphinx==1.5.2',
               'sphinx-rtd-theme==0.4.1',

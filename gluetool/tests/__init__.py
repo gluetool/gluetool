@@ -1,6 +1,5 @@
 # pylint: disable=blacklisted-name
 
-# pylint: disable=relative-import
 import json
 
 import ruamel.yaml

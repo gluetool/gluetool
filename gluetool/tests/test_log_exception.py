@@ -20,7 +20,7 @@ gluetool.glue.GlueError: Foo failed
 
     Local variables:
         exc = Foo failed
-        excinfo = \(<class 'gluetool\.glue\.GlueError'>, GlueError\('Foo failed',\), <traceback object at 0x[0-9a-f]+>\)
+        excinfo = \(<class 'gluetool\.glue\.GlueError'>, GlueError\('Foo failed',?\), <traceback object at 0x[0-9a-f]+>\)
 
   File "{{ FILE}}", line 81, in foo
     raise gluetool.GlueError\('Foo failed'\)

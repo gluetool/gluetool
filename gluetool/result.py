@@ -12,8 +12,10 @@ from typing import cast, Any, Generic, Optional, TypeVar, Union  # noqa
 #
 
 # T represents the type of valid value...
+# pylint: disable=invalid-name
 T = TypeVar("T")
 # ... and E represents type of the error description.
+# pylint: disable=invalid-name
 E = TypeVar("E")
 
 
@@ -49,10 +51,9 @@ class Result(Generic[T, E]):
         # type: (Any) -> bool
         # pylint: disable=protected-access
 
+        # pylint: disable=line-too-long
         return bool(
-            self.__class__ == other.__class__ and
-            self.is_ok == cast(Result[T, E], other).is_ok and
-            self._value == other._value
+            self.__class__ == other.__class__ and self.is_ok == cast(Result[T, E], other).is_ok and self._value == other._value  # Ignore: PEP8Bear
         )
 
     def __ne__(self, other):
