@@ -37,6 +37,7 @@ class OptionsGatherer(object):
     def walk(cls, node):
         gatherer = cls()
 
+        # pylint: disable=no-member
         walker = pylint.utils.PyLintASTWalker(None)
         walker.add_checker(gatherer)
         walker.walk(node)

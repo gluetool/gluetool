@@ -19,6 +19,18 @@ matrix:
       - python: 3.6
         env: TOX_ENV=py36-unit-tests
 
+      - python: 3.7
+        env: TOX_ENV=py37-static-analysis
+
+      - python: 3.7
+        env: TOX_ENV=py37-unit-tests
+
+      - python: 3.8
+        env: TOX_ENV=py38-static-analysis
+
+      - python: 3.8
+        env: TOX_ENV=py38-unit-tests
+
       # For type-check, we need Python 3 to power `mypy`. It's going to check types for both
       # Python 3 *and* 2, therefore it's perfectly fine to run it just once.
       - python: 3.6

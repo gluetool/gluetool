@@ -109,7 +109,7 @@ class ModuleInfoGroup(object):
                 if not relate(Version(item.equal), Version(version)):
                     raise gluetool.GlueError("Cannot find common version for package '{}'".format(item.pkg))
             return '{}=={}'.format(item.pkg, item.equal)
-        elif item.upper and item.lower:
+        if item.upper and item.lower:
             lower_operator, lower_version = item.lower
             upper_operator, upper_version = item.upper
             relate = self.ops_map[lower_operator]
@@ -119,10 +119,10 @@ class ModuleInfoGroup(object):
             if not relate(Version(lower_version), Version(upper_version)):
                 raise gluetool.GlueError("Cannot find common version for package '{}'".format(item.pkg))
             return '{}{}{},{}{}'.format(item.pkg, lower_operator, lower_version, upper_operator, upper_version)
-        elif item.upper:
+        if item.upper:
             upper_operator, upper_version = item.upper
             return '{}{}{}'.format(item.pkg, upper_operator, upper_version)
-        elif item.lower:
+        if item.lower:
             lower_operator, lower_version = item.lower
             return '{}{}{}'.format(item.pkg, lower_operator, lower_version)
 

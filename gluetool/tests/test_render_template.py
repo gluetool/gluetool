@@ -24,7 +24,10 @@ def test_render(template):
 
 
 def test_unexpected_template_type():
-    with pytest.raises(gluetool.GlueError, message="Unhandled template type <type 'int'>"):
+    with pytest.raises(
+        gluetool.GlueError,
+        match="Cannot render template: Unhandled template type <(type|class) 'int'>"
+    ):
         render_template(17)
 
 

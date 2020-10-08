@@ -312,8 +312,7 @@ def retry(*args):
             except args as e:
                 if isinstance(e, GlueError):
                     raise GlueRetryError(e.value)  # type: ignore
-                else:
-                    raise GlueRetryError(e)
+                raise GlueRetryError(e)
         return func_wrapper
     return wrap
 
@@ -696,6 +695,7 @@ class Pipeline(LoggerMixin, object):
             # The failure would then be propagated to `run()` method and it would represent the cause
             # that killed the pipeline.
 
+            # pylint: disable=bad-continuation
             with Action(
                 'executing module',
                 parent=self.action,
@@ -745,6 +745,7 @@ class Pipeline(LoggerMixin, object):
 
             # We get either `None` or a failure if an exception was raised by `destroy`. If it's a failure,
             # we can log it with a bit more context.
+            # pylint: disable=bad-continuation
             with Action(
                 'destroying module',
                 parent=self.action,
@@ -1553,6 +1554,7 @@ class Module(Configurable):
             eval_context_help(self)
         ]
 
+        # pylint: disable=not-callable
         self._parse_args(args,
                          usage='{} [options]'.format(Colors.style(self.unique_name, fg='cyan')),
                          description=docstring_to_help(self.__doc__ or ''),

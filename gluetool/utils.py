@@ -29,8 +29,6 @@ import six
 from six import PY2, ensure_str, iteritems, iterkeys
 from six.moves import http_client, urllib
 
-# Don't know why pylint reports "Relative import 'ruamel.yaml', should be 'gluetool.ruamel.yaml'" :(
-# pylint: disable=relative-import
 import ruamel.yaml
 
 from .glue import GlueError, SoftGlueError, GlueCommandError
@@ -49,6 +47,7 @@ if TYPE_CHECKING:
 
 
 # Type variable used in generic types
+# pylint: disable=invalid-name
 T = TypeVar('T')
 
 
@@ -507,10 +506,10 @@ class Command(LoggerMixin, object):
             return self.executable + self.options
 
         # escape apostrophes in strings and adds them around strings with space
+        # pylint: disable=line-too-long
         return [('"{}"'.format(option.replace('"', r'\"')) if ' ' in option and not
                  (
-                     (option.startswith('"') and option.endswith('"')) or
-                     (option.startswith("'") and option.endswith("'")))
+                     (option.startswith('"') and option.endswith('"')) or (option.startswith("'") and option.endswith("'")))  # Ignore PEP8Bear
                  else option) for option in self.executable + self.options]
 
     def _communicate_batch(self):

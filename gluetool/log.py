@@ -72,9 +72,9 @@ ExceptionInfoType = Union[
 LoggingFunctionType = Callable[
     [
         Arg(str),
-        DefaultNamedArg(ExceptionInfoType, 'exc_info'),
-        DefaultNamedArg(Dict[str, Any], 'extra'),
-        DefaultNamedArg(bool, 'sentry')
+        DefaultNamedArg(ExceptionInfoType, 'exc_info'),  # noqa: F821
+        DefaultNamedArg(Dict[str, Any], 'extra'),  # noqa: F821
+        DefaultNamedArg(bool, 'sentry')  # noqa: F821
     ],
     None
 ]
@@ -796,6 +796,7 @@ class LoggingFormatter(logging.Formatter):
     }
 
     #: Colorizers assigned to loglevels
+    # pylint: disable=not-callable
     _level_color = {
         logging.INFO: lambda text: Colors.style(text, fg='green'),
         logging.WARNING: lambda text: Colors.style(text, fg='yellow'),
