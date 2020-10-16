@@ -62,7 +62,7 @@ if __name__ == '__main__':
               'sphinx-rtd-theme==0.4.1',
               'tabulate==0.8.2',
               'typing==3.7.4; python_version == "2.7"',
-              'typing-extensions==3.7.4',
+              'typing-extensions>=3.7.4.1',
               'urlnormalizer==1.2.0',
               'pyparsing==2.3.0',
               'MarkupSafe==1.1.0'
