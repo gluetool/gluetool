@@ -8,35 +8,27 @@ language: python
 matrix:
     include:
       - python: 2.7
-        env: TOX_ENV=py27-static-analysis
-
-      - python: 2.7
-        env: TOX_ENV=py27-unit-tests
+        env: TOX_ENV=py27
 
       - python: 3.6
-        env: TOX_ENV=py36-static-analysis
-
-      - python: 3.6
-        env: TOX_ENV=py36-unit-tests
+        env: TOX_ENV=py36
 
       - python: 3.7
-        env: TOX_ENV=py37-static-analysis
-
-      - python: 3.7
-        env: TOX_ENV=py37-unit-tests
+        env: TOX_ENV=py37
 
       - python: 3.8
-        env: TOX_ENV=py38-static-analysis
-
-      - python: 3.8
-        env: TOX_ENV=py38-unit-tests
+        env: TOX_ENV=py38
 
       # For type-check, we need Python 3 to power `mypy`. It's going to check types for both
       # Python 3 *and* 2, therefore it's perfectly fine to run it just once.
       - python: 3.6
         env: TOX_ENV=type-check
 
-install: pip install tox-travis
+install:
+  - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+  - source $HOME/.poetry/env
+  - poetry config virtualenvs.in-project true
+  - pip install tox-travis
 
 script:
   - tox -e $TOX_ENV
