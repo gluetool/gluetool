@@ -2059,7 +2059,6 @@ class Glue(Configurable):
         """
 
         stack = inspect.stack()
-        log_dict(self.verbose, 'stack', stack)
 
         # When being called as a regular shared function, the call stack layout should be
         # as follows:
@@ -2110,8 +2109,6 @@ class Glue(Configurable):
         for pipeline in self.pipelines:
             for module in pipeline.modules:
                 context.update(module.eval_context)
-
-        log_dict(self.verbose, 'eval context', context)
 
         return context
 
