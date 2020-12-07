@@ -4,7 +4,7 @@ from setuptools import setup
 # setuptools-scm would extract version from a git tag, but one has to mention setuptools-scm in
 # `setup_requires` field, and pip does not play well with that one, and it's all kinds of messy
 # and I see no light :((
-VERSION = '1.24'
+VERSION = '1.25'
 
 
 if __name__ == '__main__':
