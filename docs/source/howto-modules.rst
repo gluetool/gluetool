@@ -162,7 +162,7 @@ Adding a new gluetool module is very simple. This is a minimal module that just 
     from gluetool import Module
 
     class MinimalModule(Module):
-        name = 'example-minimal'
+        name = 'minimal'
         description = 'A minimal module'
 
         def execute(self):
