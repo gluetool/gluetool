@@ -54,7 +54,7 @@ if __name__ == '__main__':
               'mypy-extensions==0.4.1',
               'packaging==17.1',
               'raven==6.9.0',
-              'requests==2.19.1',
+              'requests==2.25.1',
               'requests-toolbelt==0.8.0',
               'ruamel.yaml==0.16.12',
               'six==1.12.0',
