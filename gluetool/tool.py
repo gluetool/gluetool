@@ -224,11 +224,13 @@ class Gluetool(object):
         if failure.module:
             msg = "Pipeline reported an exception in module '{}': {}".format(
                 failure.module.unique_name,
-                failure.exc_info[1]
+                str(failure.exc_info[1]) or repr(failure.exc_info[1])
             )
 
         else:
-            msg = "Pipeline reported an exception: {}".format(failure.exc_info[1])
+            msg = "Pipeline reported an exception: {}".format(
+                str(failure.exc_info[1]) or repr(failure.exc_info[1])
+            )
 
         logger.error(msg, exc_info=failure.exc_info)
 
