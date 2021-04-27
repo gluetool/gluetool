@@ -897,9 +897,11 @@ class LoggingFormatter(logging.Formatter):
             #
             # Regular sort would yield contexts by their priorities from lower to higher ones, therefore reversed flag.
             # That way we'd start inserting higher priority contexts sooner than lower priority ones.
+
+            # Mypy is not happy about lambda function: https://github.com/python/mypy/issues/9656#issuecomment-718284938
             sorted_contexts = sorted(
                 iterkeys(contexts),
-                key=lambda ctx_name: contexts[ctx_name][0],
+                key=lambda ctx_name: contexts[ctx_name][0],  # type: ignore
                 reverse=True
             )
 
