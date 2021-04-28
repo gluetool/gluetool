@@ -310,9 +310,12 @@ Will try to submit it to Sentry but giving up on everything else.
         def _signal_handler(signum, frame, handler=None, msg=None):
             # type: (int, FrameType, Optional[Callable[[int, FrameType], None]], Optional[str]) -> Any
 
-            msg = msg or 'Signal {} received'.format(sigmap[signum])
+            msg = msg or 'Signal {} received, set threading event'.format(sigmap[signum])
 
             Glue.warn(msg)
+
+            # set event to signal threads they should finish asap
+            Glue.event.set()
 
             if handler is not None:
                 return handler(signum, frame)

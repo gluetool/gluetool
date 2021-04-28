@@ -9,6 +9,7 @@ import inspect
 import logging
 import os
 import sys
+import threading
 import warnings
 
 from functools import partial
@@ -1715,6 +1716,9 @@ class Glue(Configurable):
     """
 
     name = 'gluetool core'
+
+    # Event signalling to threads they should finish as soon as possible
+    event = threading.Event()
 
     options = [
         ('Global options', {
