@@ -947,7 +947,8 @@ class Configurable(LoggerMixin, object):
 
         # Sort options by their names - no code has a strong option on their order, so force
         # one to all users of this helper.
-        option_names = sorted(iterkeys(options), key=lambda x: x[1] if isinstance(x, tuple) else x)
+        # Mypy is not happy about lambda function: https://github.com/python/mypy/issues/9656#issuecomment-718284938
+        option_names = sorted(iterkeys(options), key=lambda x: x[1] if isinstance(x, tuple) else x)  # type: ignore
 
         for names in option_names:
             params = options[names]

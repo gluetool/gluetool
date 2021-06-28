@@ -489,7 +489,7 @@ class Command(LoggerMixin, object):
 
         self._command = None  # type: Optional[List[str]]
         self._popen_kwargs = None  # type: Optional[Dict[str, Any]]
-        self._process = None  # type: Optional[subprocess.Popen]
+        self._process = None  # type: Optional[subprocess.Popen[str]]
         self._exit_code = None  # type: Optional[int]
 
         self._stdout = None  # type: Optional[str]
