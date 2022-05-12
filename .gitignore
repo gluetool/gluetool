@@ -16,6 +16,7 @@ dist
 **/.coverage*
 
 # auto-generated *.rst docs
+docs/source/modules.rst
 docs/source/gluetool.*
 
 # Ansible "retry" files
