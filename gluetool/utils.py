@@ -65,6 +65,16 @@ if 'file' not in urlnormalizer.normalizer.SCHEMES:
     urlnormalizer.normalizer.SCHEMES = urlnormalizer.normalizer.SCHEMES + ('file',)
 
 
+# Jinja2 filter - regular expression replace
+def regex_replace(s, find, replace):
+    # type: (str, str, str) -> str
+    return re.sub(find, replace, s)
+
+
+# Jinja2 - register custom filters
+jinja2.defaults.DEFAULT_FILTERS['regex_replace'] = regex_replace
+
+
 def deprecated(func):
     # type: (Callable[..., Any]) -> Callable[..., Any]
 
