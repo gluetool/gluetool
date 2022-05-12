@@ -1,6 +1,6 @@
 # Type annotations
 # pylint: disable=unused-import,wrong-import-order
-from typing import cast, Any, Generic, Optional, TypeVar, Union  # noqa
+from typing import cast, Any, Callable, Generic, Optional, TypeVar, Union  # noqa
 
 
 #
@@ -11,12 +11,14 @@ from typing import cast, Any, Generic, Optional, TypeVar, Union  # noqa
 # value - or ``Error(error)`` which represents an error, carrying error's description.
 #
 
-# T represents the type of valid value...
+# T and S represent the type of valid value...
 # pylint: disable=invalid-name
 T = TypeVar("T")
-# ... and E represents type of the error description.
+S = TypeVar("S")
+# ... and E and F represent type of the error description.
 # pylint: disable=invalid-name
 E = TypeVar("E")
+F = TypeVar("F")
 
 
 class Result(Generic[T, E]):
@@ -189,6 +191,40 @@ class Result(Generic[T, E]):
             return cast(T, self._value)
 
         return default
+
+    def map(self, fn):
+        # type: (Callable[[T], Result[S, F]]) -> Result[S, F]
+        """
+        Apply given callback to the valid value.
+
+        If this result carries a valid value, then unpack it and pass it to ``fn`` as its single argument.
+        Return value of ``fn`` call is then returned.
+
+        If this result carries an invalid value, ``fn`` is not called, and the invalid value is returned,
+        wrapped properly.
+        """
+
+        if self.is_error:
+            return Error(cast(F, self.unwrap_error()))
+
+        return fn(self.unwrap())
+
+    def map_error(self, fn):
+        # type: (Callable[[E], Result[S, F]]) -> Result[S, F]
+        """
+        Apply given callback to the invalid value.
+
+        If this result carries an invalid value, then unpack it and pass it to ``fn`` as its single argument.
+        Return value of ``fn`` call is then returned.
+
+        If this result carries a valid value, ``fn`` is not called, and the valid value is returned,
+        wrapped properly.
+        """
+
+        if self.is_ok:
+            return Ok(cast(S, self.unwrap()))
+
+        return fn(self.unwrap_error())
 
 
 # pylint: disable=invalid-name

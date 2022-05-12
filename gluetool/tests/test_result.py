@@ -1,4 +1,5 @@
 import pytest
+from mock import MagicMock
 
 import gluetool
 from gluetool.result import Result, Ok, Error
@@ -101,3 +102,31 @@ def test_unwrap_or():
     assert o.unwrap_or('default value') == 'foo'
     assert n.unwrap_or('default value') == 'default value'
 
+
+def test_map():
+    o = Ok('foo')
+
+    mock_on_error = MagicMock()
+
+    n = o \
+        .map(lambda s: Ok(s + 'bar')) \
+        .map(lambda s: Ok(s + 'baz')) \
+        .map_error(mock_on_error)
+
+    assert n.is_ok
+    assert n.unwrap() == 'foobarbaz'
+    mock_on_error.assert_not_called()
+
+
+def test_map_error():
+    o = Error('foo')
+
+    mock_on_ok = MagicMock()
+
+    n = o \
+        .map_error(lambda s: Error(s + 'bar')) \
+        .map(mock_on_ok)
+
+    assert n.is_error
+    assert n.unwrap_error() == 'foobar'
+    mock_on_ok.assert_not_called()
